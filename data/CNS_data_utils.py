@@ -159,7 +159,7 @@ import math as mt
 import random
 
 class GaussianNormalizer(object):
-    def __init__(self, x, eps=1e-5):
+    def __init__(self, x, eps=1e-8):
         super(GaussianNormalizer, self).__init__()
         
         # x: numpy array of shape [b, h, w, t, c]
@@ -272,8 +272,8 @@ class FNODatasetSingle(Dataset):
                         ## convert to [x1, ..., xd, t, v]
                         _data = np.transpose(_data, (0, 2, 3, 1))
                         self.data[...,3] = _data   # batch, x, t, ch
-                        self.normalizer = GaussianNormalizer(self.data[:int(idx_cfd[0]//reduced_batch)])
-                        self.data = self.normalizer.encode(self.data)
+                        # self.normalizer = GaussianNormalizer(self.data[:int(idx_cfd[0]//reduced_batch)])
+                        # self.data = self.normalizer.encode(self.data)
                         x = np.array(f["x-coordinate"], dtype=np.float32)
                         y = np.array(f["y-coordinate"], dtype=np.float32)
                         x = torch.tensor(x, dtype=torch.float)
@@ -432,6 +432,7 @@ class FNODatasetSingle(Dataset):
         train_dataset.data = dataset.data[indices[test_size:total_samples]]
         test_dataset.data = dataset.data[indices[:test_size]]
         
+        
         return train_dataset, test_dataset
 
 
@@ -485,8 +486,6 @@ class FNODatasetMultistep(Dataset):
             ## convert to [x1, ..., xd, t, v]
             _data = np.transpose(_data, (0, 2, 3, 1))
             self.data[...,3] = _data   # batch, x, t, ch
-            self.normalizer = GaussianNormalizer(self.data[:int(idx_cfd[0]//reduced_batch)])
-            self.data = self.normalizer.encode(self.data)
             x = np.array(f["x-coordinate"], dtype=np.float32)
             y = np.array(f["y-coordinate"], dtype=np.float32)
             x = torch.tensor(x, dtype=torch.float)
@@ -495,8 +494,6 @@ class FNODatasetMultistep(Dataset):
             self.grid = torch.stack((X, Y), axis=-1)[::reduced_resolution, ::reduced_resolution]
 
         self.initial_step = initial_step
-
-        self.data = self.data if torch.is_tensor(self.data) else torch.tensor(self.data)
 
     def __len__(self):
         return len(self.data)
@@ -536,95 +533,98 @@ class FNODatasetMultistep(Dataset):
         indices = torch.randperm(total_samples)
         test_size = int(total_samples * test_ratio)
         
-        # 创建训练集和测试集
         train_dataset = copy.deepcopy(dataset)
         test_dataset = copy.deepcopy(dataset)
 
         train_dataset.data = dataset.data[indices[test_size:total_samples]]
+        normalizer = GaussianNormalizer(train_dataset.data)
+        train_dataset.data = torch.tensor(normalizer.encode(train_dataset.data))
+        
         test_dataset.data = dataset.data[indices[:test_size]]
+        test_dataset.data = torch.tensor(normalizer.encode(test_dataset.data))
         
         return train_dataset, test_dataset
 
-class FNODatasetMult(Dataset):
-    def __init__(self, filename,
-                 initial_step=10,
-                 saved_folder='../data/',
-                 reduced_resolution=1,
-                 reduced_resolution_t=1,
-                 reduced_batch=1,
-                 if_test=False, test_ratio=0.1
-                 ):
-        """
+# class FNODatasetMult(Dataset):
+#     def __init__(self, filename,
+#                  initial_step=10,
+#                  saved_folder='../data/',
+#                  reduced_resolution=1,
+#                  reduced_resolution_t=1,
+#                  reduced_batch=1,
+#                  if_test=False, test_ratio=0.1
+#                  ):
+#         """
         
-        :param filename: filename that contains the dataset
-        :type filename: STR
-        :param filenum: array containing indices of filename included in the dataset
-        :type filenum: ARRAY
-        :param initial_step: time steps taken as initial condition, defaults to 10
-        :type initial_step: INT, optional
+#         :param filename: filename that contains the dataset
+#         :type filename: STR
+#         :param filenum: array containing indices of filename included in the dataset
+#         :type filenum: ARRAY
+#         :param initial_step: time steps taken as initial condition, defaults to 10
+#         :type initial_step: INT, optional
 
-        """
+#         """
         
-        # Define path to files
-        self.file_path = os.path.abspath(saved_folder + filename + ".h5")
+#         # Define path to files
+#         self.file_path = os.path.abspath(saved_folder + filename + ".h5")
         
-        # Extract list of seeds
-        with h5py.File(self.file_path, 'r') as h5_file:
-            data_list = sorted(h5_file.keys())
+#         # Extract list of seeds
+#         with h5py.File(self.file_path, 'r') as h5_file:
+#             data_list = sorted(h5_file.keys())
 
-        test_idx = int(len(data_list) * (1-test_ratio))
-        if if_test:
-            self.data_list = np.array(data_list[test_idx:])
-        else:
-            self.data_list = np.array(data_list[:test_idx])
+#         test_idx = int(len(data_list) * (1-test_ratio))
+#         if if_test:
+#             self.data_list = np.array(data_list[test_idx:])
+#         else:
+#             self.data_list = np.array(data_list[:test_idx])
         
-        # Time steps used as initial conditions
-        self.initial_step = initial_step
+#         # Time steps used as initial conditions
+#         self.initial_step = initial_step
 
-    def __len__(self):
-        return len(self.data_list)
+#     def __len__(self):
+#         return len(self.data_list)
     
-    def __getitem__(self, idx):
+#     def __getitem__(self, idx):
         
-        # Open file and read data
-        with h5py.File(self.file_path, 'r') as h5_file:
-            seed_group = h5_file[self.data_list[idx]]
+#         # Open file and read data
+#         with h5py.File(self.file_path, 'r') as h5_file:
+#             seed_group = h5_file[self.data_list[idx]]
         
-            # data dim = [t, x1, ..., xd, v]
-            data = np.array(seed_group["data"], dtype='f')
-            data = torch.tensor(data, dtype=torch.float)
+#             # data dim = [t, x1, ..., xd, v]
+#             data = np.array(seed_group["data"], dtype='f')
+#             data = torch.tensor(data, dtype=torch.float)
             
-            # convert to [x1, ..., xd, t, v]
-            permute_idx = list(range(1,len(data.shape)-1))
-            permute_idx.extend(list([0, -1]))
-            data = data.permute(permute_idx)
+#             # convert to [x1, ..., xd, t, v]
+#             permute_idx = list(range(1,len(data.shape)-1))
+#             permute_idx.extend(list([0, -1]))
+#             data = data.permute(permute_idx)
             
-            # Extract spatial dimension of data
-            dim = len(data.shape) - 2                                               
+#             # Extract spatial dimension of data
+#             dim = len(data.shape) - 2                                               
             
-            # x, y and z are 1-D arrays
-            # Convert the spatial coordinates to meshgrid
-            if dim == 1:
-                grid = np.array(seed_group["grid"]["x"], dtype='f')
-                grid = torch.tensor(grid, dtype=torch.float).unsqueeze(-1)
-            elif dim == 2:
-                x = np.array(seed_group["grid"]["x"], dtype='f')
-                y = np.array(seed_group["grid"]["y"], dtype='f')
-                x = torch.tensor(x, dtype=torch.float)
-                y = torch.tensor(y, dtype=torch.float)
-                X, Y = torch.meshgrid(x, y, indexing='ij')
-                grid = torch.stack((X,Y),axis=-1)
-            elif dim == 3:
-                x = np.array(seed_group["grid"]["x"], dtype='f')
-                y = np.array(seed_group["grid"]["y"], dtype='f')
-                z = np.array(seed_group["grid"]["z"], dtype='f')
-                x = torch.tensor(x, dtype=torch.float)
-                y = torch.tensor(y, dtype=torch.float)
-                z = torch.tensor(z, dtype=torch.float)
-                X, Y, Z = torch.meshgrid(x, y, z, indexing='ij')
-                grid = torch.stack((X,Y,Z),axis=-1)
+#             # x, y and z are 1-D arrays
+#             # Convert the spatial coordinates to meshgrid
+#             if dim == 1:
+#                 grid = np.array(seed_group["grid"]["x"], dtype='f')
+#                 grid = torch.tensor(grid, dtype=torch.float).unsqueeze(-1)
+#             elif dim == 2:
+#                 x = np.array(seed_group["grid"]["x"], dtype='f')
+#                 y = np.array(seed_group["grid"]["y"], dtype='f')
+#                 x = torch.tensor(x, dtype=torch.float)
+#                 y = torch.tensor(y, dtype=torch.float)
+#                 X, Y = torch.meshgrid(x, y, indexing='ij')
+#                 grid = torch.stack((X,Y),axis=-1)
+#             elif dim == 3:
+#                 x = np.array(seed_group["grid"]["x"], dtype='f')
+#                 y = np.array(seed_group["grid"]["y"], dtype='f')
+#                 z = np.array(seed_group["grid"]["z"], dtype='f')
+#                 x = torch.tensor(x, dtype=torch.float)
+#                 y = torch.tensor(y, dtype=torch.float)
+#                 z = torch.tensor(z, dtype=torch.float)
+#                 X, Y, Z = torch.meshgrid(x, y, z, indexing='ij')
+#                 grid = torch.stack((X,Y,Z),axis=-1)
         
-        return data[...,:self.initial_step,:], data, grid
+#         return data[...,:self.initial_step,:], data, grid
 
 
     
