@@ -55,8 +55,7 @@ accelerate launch train.py \
   --data-dir=[YOUR_DATA_PATH]
 ``` -->
 ```bash
-export NCCL_IB_DISABLE=0 export NCCL_P2P_DISABLE=1 export NCCL_DEBUG=INFO accelerate launch -
--multi_gpu --mixed_precision=fp16 --num_processes=2 train.py
+export NCCL_IB_DISABLE=0 export NCCL_P2P_DISABLE=1 export NCCL_DEBUG=INFO accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train.py
 ```
 
 Then this script will automatically create the folder in `exps` to save logs and checkpoints. You can adjust the following options:
