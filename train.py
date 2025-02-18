@@ -34,9 +34,9 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
 
     # logging:
-    parser.add_argument("--output-dir", type=str, default="exps")
+    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     #* 每次试验前标注实验名称，
-    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.01_difftrans_afno")
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.001_difftrans_afno")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--batch-size", type=int, default=100)
@@ -45,7 +45,7 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.01)
+    parser.add_argument("--proj-coeff", type=float, default=0.001)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
 
     # model
@@ -53,7 +53,7 @@ def parse_args(input_args=None):
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--encoder-depth", type=int, default=4)
     parser.add_argument("--fused-attn", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--qk-norm",  action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--qk-norm",  action=argparse.BooleanOptionalAction, default=True)
 
     # dataset
     parser.add_argument("--data-dir", type=str, default="../data/imagenet256")
@@ -256,7 +256,10 @@ def main(args):
     )    
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.epochs, gamma=0.1)  # 根据需要调整参数
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs//10, T_mult=2, eta_min=1e-6)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs//3, T_mult=2, eta_min=1e-8)
+    scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.learning_rate//5, max_lr=args.learning_rate,
+                                              mode = 'triangular2', gamma = 0.95,
+                                              step_size_up=10000, step_size_down=20000,cycle_momentum=False)  
     flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
     base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
 
