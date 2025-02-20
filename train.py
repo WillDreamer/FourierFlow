@@ -36,7 +36,7 @@ def parse_args(input_args=None):
     # logging:
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     #* 每次试验前标注实验名称，
-    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.001_difftrans_afno")
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.5_difftrans_afno_cycle")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--batch-size", type=int, default=100)
@@ -45,7 +45,7 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.001)
+    parser.add_argument("--proj-coeff", type=float, default=0.5)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
 
     # model
@@ -400,6 +400,7 @@ def main(args):
                 
                 _err_RMSE_avg = 0
                 _err_nRMSE_avg = 0
+                _err_F_mean_avg = 0
                 with torch.no_grad():
                     # test_iter = iter(test_dataloader)
                     # target_test, grid_test, raw_image_test = next(test_iter)
@@ -423,10 +424,14 @@ def main(args):
                         = metric_func(samples, target_test, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
                         _err_RMSE_avg += _err_RMSE.item()
                         _err_nRMSE_avg += _err_nRMSE.item()
+                        _err_F_mean = _err_F.mean(-1)
+                        _err_F_mean_avg += _err_F_mean.item
                     _err_RMSE_avg /= len(test_dataloader)
                     _err_nRMSE_avg /= len(test_dataloader)
-                    logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}')
-                    val_log = {"val_RMSE": _err_RMSE_avg, "val_nRMSE": _err_nRMSE_avg}
+                    _err_F_mean_avg /= len(test_dataloader)
+                   
+                    logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, fRMSE:{_err_F_mean_avg:.4f}')
+                    val_log = {"val_RMSE": _err_RMSE_avg, "val_nRMSE": _err_nRMSE_avg, 'val_fRMSE':_err_F_mean_avg}
                     accelerator.log(val_log, step=global_step)
 
             logs = {
