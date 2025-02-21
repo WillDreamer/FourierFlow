@@ -1,35 +1,21 @@
 import argparse
-import copy
 from copy import deepcopy
 import logging
-from pathlib import Path
-from collections import OrderedDict
-import json
-from data_utils import FNODatasetSingle, FNODatasetMult
+from data.CNS_data_utils import FNODatasetSingle, FNODatasetMultistep
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from tqdm.auto import tqdm
 from torch.utils.data import DataLoader
-from fno import FNO1d, FNO2d, FNO3d
-from ViT_MAE import *
+from utils.metrics import *
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from einops import rearrange
-from models.sit import SiT_models
-from loss import SILoss
-from utils import load_encoders
-
-from dataset import CustomDataset
-from diffusers.models import AutoencoderKL
-# import wandb_utils
-import wandb
+from models.diff_afno_sit import SiT_models
 import math
 from torchvision.utils import make_grid
-from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from torchvision.transforms import Normalize
 import pdb
 import os
 import matplotlib.pyplot as plt
@@ -108,10 +94,16 @@ def main(args):
     ckpt = torch.load(
         f'{os.path.join(args.output_dir, args.exp_name)}/checkpoints/{ckpt_name}',
         map_location='cpu',
-        )
-    model.load_state_dict(ckpt['model'])
+        )["model"]
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for key, value in ckpt.items():
+        new_key = key.replace("module.", "")
+        new_state_dict[new_key] = value
+    # model.load_state_dict(ckpt['model'])
+    model.load_state_dict(new_state_dict)
+
     model = model.to(device)
-    
     logger.info(f"SiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
@@ -119,18 +111,17 @@ def main(args):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
     
-    flnm = '2D_CFD_Rand_M0.1_Eta0.1_Zeta0.1_periodic_128_Train.hdf5'
+    flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
     base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
 
     #* 换成PDE数据集，先快速实验用reduced_batch 100
-    train_dataset, test_dataset = FNODatasetSingle.get_train_test_datasets(
+    train_dataset, test_dataset = FNODatasetMultistep.get_train_test_datasets(
                                     flnm,
-                                    reduced_resolution=1,
+                                    reduced_resolution=4,
                                     reduced_resolution_t=1,
                                     reduced_batch=1,
                                     initial_step=0,
                                     saved_folder=base_path,
-                                    logger=logger
                                 )
     local_batch_size = 8
     test_dataloader = DataLoader(
@@ -145,29 +136,45 @@ def main(args):
     model.eval()  # important! This enables embedding dropout for classifier-free guidance
                
     from samplers import euler_sampler
+    _err_RMSE_avg = 0
+    _err_nRMSE_avg = 0
+    _err_max_avg = 0
     with torch.no_grad():
-        test_iter = iter(test_dataloader)
-        target_test, grid_test, raw_image_test = next(test_iter)
-        raw_image_test = rearrange(raw_image_test, "B H W C -> B C H W").to(device)
-        target_test = rearrange(target_test, "B H W C -> B C H W").to(device)
-        sample_input = torch.randn_like(target_test, device=device)
-        samples = euler_sampler(
-            model, 
-            sample_input, 
-            raw_image_test,
-            num_steps=50, 
-            cfg_scale=4.0,
-            guidance_low=0.,
-            guidance_high=1.,
-            path_type=args.path_type,
-            heun=False,
-        ).to(torch.float32)
+        # test_iter = iter(test_dataloader)
+        # target_test, grid_test, raw_image_test = next(test_iter)
+        for target_test, grid_test, raw_image_test in test_dataloader:
+            raw_image_test = rearrange(raw_image_test, "B H W T C -> B T C H W").to(device)
+            target_test = rearrange(target_test, "B H W T C -> B T C H W").to(device)
+            sample_input = torch.randn_like(target_test, device=device)
+            samples = euler_sampler(
+                model, 
+                sample_input, 
+                raw_image_test,
+                num_steps=50, 
+                cfg_scale=4.0,
+                guidance_low=0.,
+                guidance_high=1.,
+                path_type=args.path_type,
+                heun=False,
+            ).to(torch.float32)
+            Lx, Ly, Lz = 1., 1., 1.
+            _err_RMSE, _err_nRMSE, _err_CSV, _err_Max, _err_BD, _err_F \
+            = metric_func(samples, target_test, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
+            _err_RMSE_avg += _err_RMSE.item()
+            _err_nRMSE_avg += _err_nRMSE.item()
+            _err_max_avg += _err_Max.item()
+        _err_RMSE_avg /= len(test_dataloader)
+        _err_nRMSE_avg /= len(test_dataloader)
+        _err_max_avg /= len(test_dataloader)
+        
+        logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, Max:{_err_max_avg:.4f}')
     with PdfPages('output.pdf') as pdf:
         for i in range(samples.size(0)):  # 遍历每个样本
             fig, axes = plt.subplots(2, 4, figsize=(16, 4))  # 创建 1 行 4 列的子图
+            axes = axes.flatten()  # 将 axes 数组扁平化为一维数组
             for j in range(samples.size(1)):  # 遍历每个通道
-                axes[j].imshow(samples[i, j].cpu().numpy(), cmap='warm')  # 显示图像
-                axes[j+4].imshow(target_test[i, j].cpu().numpy(), cmap='warm')  # 显示图像
+                axes[j].imshow(samples[i, j].cpu().numpy().transpose(1, 2, 0), cmap='coolwarm')  # 显示图像
+                axes[j+4].imshow(target_test[i, j].cpu().numpy().transpose(1, 2, 0), cmap='coolwarm')  # 显示图像
                 axes[j].axis('off')  # 关闭坐标轴
                 axes[j].set_title(f'Smaple {i+1}, Channel {j+1}')  # 设置标题
                 axes[j+4].axis('off')  # 关闭坐标轴
@@ -182,17 +189,17 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
 
     # logging:
-    parser.add_argument("--output-dir", type=str, default="exps-old")
-    parser.add_argument("--exp-name", type=str, default="2d_cfd_mse_align_scheduler")
-    parser.add_argument("--logging-dir", type=str, default="/wanghaixin/REPA-origin/logs/test")
+    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps")
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.1_difftrans_afno_0218-20:45")
+    parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs/test")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--sampling-steps", type=int, default=10000)
-    parser.add_argument("--ckpt-step", type=int, default=50000)
+    parser.add_argument("--ckpt-step", type=int, default=270000)
 
     # model
     parser.add_argument("--model", type=str,default="SiT-XL/2")
     parser.add_argument("--num-classes", type=int, default=1000)
-    parser.add_argument("--encoder-depth", type=int, default=8)
+    parser.add_argument("--encoder-depth", type=int, default=3)
     parser.add_argument("--fused-attn", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--qk-norm",  action=argparse.BooleanOptionalAction, default=False)
 

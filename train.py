@@ -424,7 +424,7 @@ def main(args):
                         = metric_func(samples, target_test, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
                         _err_RMSE_avg += _err_RMSE.item()
                         _err_nRMSE_avg += _err_nRMSE.item()
-                        _err_F_mean = _err_F.mean(-1)
+                        _err_F_mean = _err_F[0]
                         _err_F_mean_avg += _err_F_mean.item
                     _err_RMSE_avg /= len(test_dataloader)
                     _err_nRMSE_avg /= len(test_dataloader)

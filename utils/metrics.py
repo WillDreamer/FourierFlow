@@ -254,7 +254,6 @@ def metric_func(pred, target, if_mean=True, Lx=1., Ly=1., Lz=1., iLow=4, iHigh=1
                         continue
                     err_F[:, :, it] += _err_F[:, :, i, j, k]
         _err_F = torch.sqrt(torch.mean(err_F, axis=0)) / (nx * ny * nz) * Lx * Ly * Lz
-
     err_F = torch.zeros([nc, 3, nt]).to(device)
     err_F[:,0] += torch.mean(_err_F[:,:iLow], dim=1)  # low freq
     err_F[:,1] += torch.mean(_err_F[:,iLow:iHigh], dim=1)  # middle freq
