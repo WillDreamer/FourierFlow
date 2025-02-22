@@ -33,21 +33,21 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
     #* 每次试验前标注实验名称，
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
-    # parser.add_argument("--exp-name", type=str, \
-    #                     default="3d_cfd_mse_align_0.5_difftrans_afno_cycle")
-    # parser.add_argument("--flnm", type=str, \
-    #                     default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
-    # parser.add_argument("--base-path", type=str, \
-    #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
-    # parser.add_argument("--reduced-resolution", type=int, default=4)
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_CFD_M1.0_no_align_difftrans_afno_cycle")
+                        default="3d_cfd_no_align_difftrans_afno_cycle")
     parser.add_argument("--flnm", type=str, \
-                        default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+                        default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \
                         default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    # parser.add_argument("--exp-name", type=str, \
+    #                     default="3d_CFD_M1.0_no_align_difftrans_afno_cycle")
+    # parser.add_argument("--flnm", type=str, \
+    #                     default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    # parser.add_argument("--base-path", type=str, \
+    #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    
     parser.add_argument("--reduced-resolution", type=int, default=4)
-
+    
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--batch-size", type=int, default=100)
