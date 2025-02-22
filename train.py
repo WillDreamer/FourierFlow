@@ -41,12 +41,12 @@ def parse_args(input_args=None):
     #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
     # parser.add_argument("--reduced-resolution", type=int, default=4)
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_diff_react_no_align_difftrans_afno_cycle")
+                        default="3d_CFD_M1.0_no_align_difftrans_afno_cycle")
     parser.add_argument("--flnm", type=str, \
-                        default="2D_diff-react_NA_NA.h5")
+                        default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \
-                        default="/wanghaixin/PDEBench/data/2D/diffusion-reaction/")
-    parser.add_argument("--reduced-resolution", type=int, default=1)
+                        default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    parser.add_argument("--reduced-resolution", type=int, default=4)
 
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
@@ -415,7 +415,7 @@ def main(args):
                 
                 _err_RMSE_avg = 0
                 _err_nRMSE_avg = 0
-                _err_F_mean_avg = 0
+                _err_max_avg = 0
                 with torch.no_grad():
                     # test_iter = iter(test_dataloader)
                     # target_test, grid_test, raw_image_test = next(test_iter)
@@ -439,14 +439,13 @@ def main(args):
                         = metric_func(samples, target_test, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
                         _err_RMSE_avg += _err_RMSE.item()
                         _err_nRMSE_avg += _err_nRMSE.item()
-                        _err_F_mean = _err_F[0]
-                        _err_F_mean_avg += _err_F_mean.item
+                        _err_max_avg += _err_Max.item()
                     _err_RMSE_avg /= len(test_dataloader)
                     _err_nRMSE_avg /= len(test_dataloader)
-                    _err_F_mean_avg /= len(test_dataloader)
+                    _err_max_avg /= len(test_dataloader)
                    
-                    logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, fRMSE:{_err_F_mean_avg:.4f}')
-                    val_log = {"val_RMSE": _err_RMSE_avg, "val_nRMSE": _err_nRMSE_avg, 'val_fRMSE':_err_F_mean_avg}
+                    logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, MAX-ERR:{_err_max_avg:.4f}')
+                    val_log = {"val_RMSE": _err_RMSE_avg, "val_nRMSE": _err_nRMSE_avg, 'MAX-ERR':_err_max_avg}
                     accelerator.log(val_log, step=global_step)
 
             logs = {
