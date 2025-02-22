@@ -115,13 +115,14 @@ def main(args):
     base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
 
     #* 换成PDE数据集，先快速实验用reduced_batch 100
-    train_dataset, test_dataset = FNODatasetMultistep.get_train_test_datasets(
+    train_dataset, test_dataset,normalizer = FNODatasetMultistep.get_train_test_datasets(
                                     flnm,
                                     reduced_resolution=4,
                                     reduced_resolution_t=1,
                                     reduced_batch=1,
                                     initial_step=0,
                                     saved_folder=base_path,
+                                    if_eval_plot=True
                                 )
     local_batch_size = 8
     test_dataloader = DataLoader(
@@ -168,20 +169,27 @@ def main(args):
         _err_max_avg /= len(test_dataloader)
         
         logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, Max:{_err_max_avg:.4f}')
-    with PdfPages('output.pdf') as pdf:
-        for i in range(samples.size(0)):  # 遍历每个样本
-            fig, axes = plt.subplots(2, 4, figsize=(16, 4))  # 创建 1 行 4 列的子图
+    with PdfPages(os.path.join('/wanghaixin/FourierFlow/output',args.exp_name+'.pdf')) as pdf:
+        print(samples.shape)
+        samples = rearrange(samples, "B T C H W -> B H W T C")
+        target_test = rearrange(target_test, "B T C H W -> B H W T C")
+        samples = normalizer.decode(samples.cpu())
+        target_test = normalizer.decode(target_test.cpu())
+        for i in range(samples.size(0)):  
+            fig, axes = plt.subplots(8, 4, figsize=(16, 9))  
             axes = axes.flatten()  # 将 axes 数组扁平化为一维数组
-            for j in range(samples.size(1)):  # 遍历每个通道
-                axes[j].imshow(samples[i, j].cpu().numpy().transpose(1, 2, 0), cmap='coolwarm')  # 显示图像
-                axes[j+4].imshow(target_test[i, j].cpu().numpy().transpose(1, 2, 0), cmap='coolwarm')  # 显示图像
-                axes[j].axis('off')  # 关闭坐标轴
-                axes[j].set_title(f'Smaple {i+1}, Channel {j+1}')  # 设置标题
-                axes[j+4].axis('off')  # 关闭坐标轴
-                axes[j+4].set_title(f'GT {i+1}, Channel {j+1}')  # 设置标题
-            plt.tight_layout()
-            pdf.savefig(fig,args.exp_name+'.pdf')  # 保存当前图形到 PDF
-            plt.close(fig)  # 关闭图形以释放内存
+            for j in range(samples.size(-1)):
+                T = samples.size(-2)
+                for k in range(T):  
+                    axes[j*T+k].imshow(samples[i,:,:,k,j].numpy(), cmap='coolwarm')  
+                    axes[j*T+k+(T*samples.size(-1))].imshow(target_test[i,:,:,k,j].numpy(), cmap='coolwarm')  
+                    axes[j*T+k].axis('off')  
+                    axes[j*T+k].set_title(f'Smaple {i+1}, Step {k+1}, Channel {j+1}') 
+                    axes[j*T+k+(T*samples.size(-1))].axis('off') 
+                    axes[j*T+k+(T*samples.size(-1))].set_title(f'GT {i+1}, Step {k+1}, Channel {j+1}')  
+            plt.tight_layout(pad=0.5, w_pad=2, h_pad=2)
+            pdf.savefig(fig,dpi=300)  
+            plt.close(fig)  
         
                    
 

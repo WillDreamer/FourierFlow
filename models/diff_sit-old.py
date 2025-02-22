@@ -12,12 +12,12 @@ import numpy as np
 import math
 from torch import einsum
 from timm.models.vision_transformer import PatchEmbed, Attention, Mlp
-from timm.models.layers import to_2tuple
 from einops import rearrange, repeat
 from typing import Callable, List, Optional
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from afno2d import AFNO2D, Block
 from functools import partial
 from einops.layers.torch import Rearrange
 import pdb
@@ -149,8 +149,7 @@ class CrossAttention(nn.Module):
         q = self.to_q(x)
         k, v = self.to_kv(context).chunk(2, dim=-1)
         q, k, v = map(lambda t: rearrange(t, "b n (h d) -> (b h) n d", h=h), (q, k, v))
-        # sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
-        sim = torch.matmul(q, k.transpose(-2, -1)) * self.scale
+        sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
 
         if mask is not None:
             # fill in the masks with negative values
@@ -166,7 +165,6 @@ class CrossAttention(nn.Module):
         attn = self.dropout(attn)
         out = einsum("b i j, b j d -> b i d", attn, v)
         out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
-
         return self.to_out(out)
 
 class MultiHeadAttention(nn.Module):
@@ -227,6 +225,8 @@ class MultiHeadAttention(nn.Module):
         output = output.transpose(1, 2).contiguous().view(-1, self.num_heads , self.seq_len, self.num_hidden)  
         
         output = self.group_norm(output)
+        
+        
         output = output * (1 - _lambda_init)
         output = torch.cat([output[:, i, :, :] for i in range(self.num_heads)], dim=-1)
 
@@ -280,14 +280,17 @@ class FinalLayer(nn.Module):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
-        # self.adaLN_modulation = nn.Sequential(
-        #     nn.SiLU(),
-        #     nn.Linear(hidden_size, 2 * hidden_size, bias=True)
-        # )
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(hidden_size, 2 * hidden_size, bias=True)
+        )
 
     def forward(self, x, c, if_time):
-        
-        x = x
+        if if_time:
+            shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
+            x = modulate(self.norm_final(x), shift, scale)
+        else:
+            x = x
         x = self.linear(x)
 
         return x
@@ -303,12 +306,11 @@ class SiT(nn.Module):
         input_size=32,
         patch_size=8,
         in_channels=4,
-        hidden_size=512,           ##
-        decoder_hidden_size=512,   ##
-        num_heads=8,               ##
-        afno_depth = 6,
-        encoder_depth=4,
+        hidden_size=1152,
+        decoder_hidden_size=768,
+        encoder_depth=8,
         depth=28,
+        num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
         num_classes=1000,
@@ -329,16 +331,14 @@ class SiT(nn.Module):
         self.z_dims = [768]
         self.encoder_depth = encoder_depth
 
-        # self.x_embedder = PatchEmbed(
-        #     input_size, patch_size, in_channels, hidden_size, bias=True
-        #     )
-        self.grid_size = tuple([s // p for s, p in zip(to_2tuple(input_size), to_2tuple(patch_size))])
-        self.num_patches = self.grid_size[0] * self.grid_size[1]
+        self.x_embedder = PatchEmbed(
+            input_size, patch_size, in_channels, hidden_size, bias=True
+            )
         self.t_embedder = TimestepEmbedder(hidden_size) # timestep embedding type
-        # self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        # num_patches = self.x_embedder.num_patches
+        self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
+        num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=False)
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
         
         patch_dim = in_channels * patch_size ** 2
         self.to_patch_embedding = nn.Sequential(
@@ -347,13 +347,13 @@ class SiT(nn.Module):
         )
         self.patch2img = Rearrange('b t (h w) (c p1 p2) -> b t c (h p1) (w p2)', p1=patch_size, p2=patch_size, h=input_size//patch_size)
         
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_frames, self.num_patches, hidden_size))
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_frames, num_patches, hidden_size))
         
         self.spatial_blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(6)
+            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(12)
         ])
         self.temporal_blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(3)
+            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(6)
         ])
         
         self.projectors = nn.ModuleList([
@@ -361,28 +361,6 @@ class SiT(nn.Module):
             ])
         self.final_layer = FinalLayer(decoder_hidden_size, patch_size, self.out_channels)
         self.cross_attn = CrossAttention(hidden_size)
-
-        uniform_drop = True
-        drop_path_rate=0.
-        norm_layer = partial(nn.LayerNorm, eps=1e-6)
-        h = input_size // patch_size
-        w = h // 2 + 1
-        if uniform_drop:
-            print('using uniform droppath with expect rate', drop_path_rate)
-            dpr = [drop_path_rate for _ in range(afno_depth)]  # stochastic depth decay rule
-        else:
-            print('using linear droppath with expect rate', drop_path_rate * 0.5)
-            dpr = [x.item() for x in torch.linspace(0, drop_path_rate, afno_depth)]
-        self.afno_blocks = nn.ModuleList([
-            Block(
-                dim=hidden_size, mlp_ratio=mlp_ratio,
-                drop=0., drop_path=dpr[i], norm_layer=norm_layer, h=h, w=w, use_fno=False, use_blocks=False)
-            for i in range(afno_depth)])
-        norm_layer = partial(nn.LayerNorm, eps=1e-6)
-
-        self.norm = norm_layer(hidden_size)
-        self.conv_fuse = nn.Conv2d(in_channels=2 * in_channels, out_channels=1, kernel_size=1, stride=1)
-        self.sigmoid = nn.Sigmoid()
        
         self.initialize_weights()
 
@@ -397,17 +375,17 @@ class SiT(nn.Module):
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         pos_embed = get_2d_sincos_pos_embed(
-            self.pos_embed.shape[-1], int(self.num_patches ** 0.5)
+            self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5)
             )
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        # w = self.x_embedder.proj.weight.data
-        # nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        # nn.init.constant_(self.x_embedder.proj.bias, 0)
+        w = self.x_embedder.proj.weight.data
+        nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        nn.init.constant_(self.x_embedder.proj.bias, 0)
 
         # Initialize label embedding table:
-        # nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
+        nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -423,30 +401,30 @@ class SiT(nn.Module):
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
         # Zero-out output layers:
-        # nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
-        # nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
+        nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
+        nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    # def unpatchify(self, x, patch_size=None,cls=True):
-    #     """
-    #     x: (N, T, patch_size**2 * C)
-    #     imgs: (N, H, W, C)
-    #     """
-    #     c = self.out_channels
-    #     p = self.x_embedder.patch_size[0] if patch_size is None else patch_size
-    #     if cls:
-    #         x = x[:,1:]
-    #     else:
-    #         x = x
+    def unpatchify(self, x, patch_size=None,cls=True):
+        """
+        x: (N, T, patch_size**2 * C)
+        imgs: (N, H, W, C)
+        """
+        c = self.out_channels
+        p = self.x_embedder.patch_size[0] if patch_size is None else patch_size
+        if cls:
+            x = x[:,1:]
+        else:
+            x = x
         
-    #     h = w = int(x.shape[1] ** 0.5)
-    #     assert h * w == x.shape[1]
+        h = w = int(x.shape[1] ** 0.5)
+        assert h * w == x.shape[1]
 
-    #     x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
-    #     x = torch.einsum('nhwpqc->nchpwq', x)
-    #     imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
-    #     return imgs
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
+        x = torch.einsum('nhwpqc->nchpwq', x)
+        imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
+        return imgs
     
     def forward(self, x, t, condition, return_logvar=False):
         """
@@ -459,31 +437,28 @@ class SiT(nn.Module):
         # x: (48, 4, 4, 128, 128)
         x = self.to_patch_embedding(x)
         b, ts, n, _ = x.shape
+        
         x += self.pos_embedding[:, :, :(n)]
         x = rearrange(x, 'b t n d -> (b t) n d')
     
         if condition is not None:
             condition = self.to_patch_embedding(condition)
+            
             condition += self.pos_embedding[:, :, :(n)]
             condition = rearrange(condition, 'b t n d -> (b t) n d')
+            
             x = self.cross_attn(condition,x) + x
 
         N, T, D = x.shape
         # timestep and class embedding
         t_embed = self.t_embedder(t)                   # (N, D)
         c = t_embed.repeat(ts,1)
-
-        afno_feat = x.detach().clone()
-        for afno_blk in self.afno_blocks:
-            afno_feat = afno_blk(afno_feat)
-        afno_feat = self.norm(afno_feat)
         
         for i, block in enumerate(self.spatial_blocks):
-            x = block(x, c)                   # (N, T, D)
+            x = block(x, c)                      # (N, T, D)
             if (i + 1) == self.encoder_depth:
                 proj = self.projectors[0](x.reshape(-1, D)).reshape(N, T, -1)
-                la_D = proj.shape[-1]   
-                zs = [rearrange(proj, '(b t) n d -> b t n d', t=ts)] 
+                zs = [rearrange(proj, '(b t) n d -> b t n d', t=ts)] #[48,4,64,768]
         
         x = rearrange(x, '(b t) n d -> (b n) t d',t=ts)
         c = t_embed.repeat(n,1)
@@ -491,16 +466,8 @@ class SiT(nn.Module):
             x = block(x, c)                      # (N, T, D)
         x = rearrange(x, '(b n) t d -> b t n d',t=ts,b=b)
         
-        afno_feat = rearrange(afno_feat, '(b t) n d -> b t n d',t=ts,b=b)
-
-        v_WFNO = self.final_layer(afno_feat, c, if_time=False) 
-        x = self.final_layer(x, c, if_time=False)    
-        
-        concatenated = torch.cat((v_WFNO, x), dim=1)            # (N, T, patch_size ** 2 * out_channels)
-        G = self.sigmoid(self.conv_fuse(concatenated))
-        x = G * x + (1 - G) * v_WFNO
+        x = self.final_layer(x, c, if_time=False)                # (N, T, patch_size ** 2 * out_channels)
         x = self.patch2img(x)
-
         return x, zs
 
 
@@ -564,7 +531,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #################################################################################
 
 def SiT_XL_2(**kwargs):
-    return SiT(patch_size=8, **kwargs)
+    return SiT(depth=12, hidden_size=1152, decoder_hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
 
 def SiT_XL_4(**kwargs):
     return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=4, num_heads=16, **kwargs)

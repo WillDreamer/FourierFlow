@@ -24,7 +24,6 @@ from align.MAE_ViViT import ViViT_Encoder, MAE_ViViT
 from models.diff_afno_sit import SiT_models
 from utils.loss import SILoss
 from utils.metrics import *
-from data.CNS_data_utils import FNODatasetSingle, FNODatasetMultistep
 
 
 
@@ -32,11 +31,23 @@ logger = get_logger(__name__)
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
-
-    # logging:
-    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     #* 每次试验前标注实验名称，
-    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.5_difftrans_afno_cycle")
+    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
+    # parser.add_argument("--exp-name", type=str, \
+    #                     default="3d_cfd_mse_align_0.5_difftrans_afno_cycle")
+    # parser.add_argument("--flnm", type=str, \
+    #                     default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    # parser.add_argument("--base-path", type=str, \
+    #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    # parser.add_argument("--reduced-resolution", type=int, default=4)
+    parser.add_argument("--exp-name", type=str, \
+                        default="3d_diff_react_no_align_difftrans_afno_cycle")
+    parser.add_argument("--flnm", type=str, \
+                        default="2D_diff-react_NA_NA.h5")
+    parser.add_argument("--base-path", type=str, \
+                        default="/wanghaixin/PDEBench/data/2D/diffusion-reaction/")
+    parser.add_argument("--reduced-resolution", type=int, default=1)
+
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--batch-size", type=int, default=100)
@@ -45,7 +56,7 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.5)
+    parser.add_argument("--proj-coeff", type=float, default=0.)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
 
     # model
@@ -260,18 +271,22 @@ def main(args):
     scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.learning_rate//5, max_lr=args.learning_rate,
                                               mode = 'triangular2', gamma = 0.95,
                                               step_size_up=10000, step_size_down=20000,cycle_momentum=False)  
-    flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
-    base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
+    
+    # flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
+    # base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
 
     #* 换成PDE数据集，先快速实验用reduced_batch 100
+    if 'CFD' in args.flnm:
+        from data.CNS_data_utils import FNODatasetMultistep
+    elif 'react' in args.flnm:
+        from data.DR_data_utils import FNODatasetMultistep
     train_dataset, test_dataset = FNODatasetMultistep.get_train_test_datasets(
-                                    flnm,
-                                    reduced_resolution=4,
+                                    args.flnm,
+                                    reduced_resolution=args.reduced_resolution,
                                     reduced_resolution_t=1,
                                     reduced_batch=1,
                                     initial_step=0,
-                                    saved_folder=base_path,
-                                )
+                                    saved_folder=args.base_path,)
     
     local_batch_size = int(args.batch_size // accelerator.num_processes)
     train_dataloader = DataLoader(
