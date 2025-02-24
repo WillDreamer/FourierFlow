@@ -361,28 +361,7 @@ class SiT(nn.Module):
             ])
         self.final_layer = FinalLayer(decoder_hidden_size, patch_size, self.out_channels)
         self.cross_attn = CrossAttention(hidden_size)
-
-        uniform_drop = True
-        drop_path_rate=0.
-        norm_layer = partial(nn.LayerNorm, eps=1e-6)
-        h = input_size // patch_size
-        w = h // 2 + 1
-        if uniform_drop:
-            print('using uniform droppath with expect rate', drop_path_rate)
-            dpr = [drop_path_rate for _ in range(afno_depth)]  # stochastic depth decay rule
-        else:
-            print('using linear droppath with expect rate', drop_path_rate * 0.5)
-            dpr = [x.item() for x in torch.linspace(0, drop_path_rate, afno_depth)]
-        self.afno_blocks = nn.ModuleList([
-            Block(
-                dim=hidden_size, mlp_ratio=mlp_ratio,
-                drop=0., drop_path=dpr[i], norm_layer=norm_layer, h=h, w=w, use_fno=False, use_blocks=False)
-            for i in range(afno_depth)])
-        norm_layer = partial(nn.LayerNorm, eps=1e-6)
-
-        self.norm = norm_layer(hidden_size)
-        self.conv_fuse = nn.Conv2d(in_channels=2 * in_channels, out_channels=1, kernel_size=1, stride=1)
-        self.sigmoid = nn.Sigmoid()
+        
        
         self.initialize_weights()
 
@@ -427,26 +406,6 @@ class SiT(nn.Module):
         # nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
-
-    # def unpatchify(self, x, patch_size=None,cls=True):
-    #     """
-    #     x: (N, T, patch_size**2 * C)
-    #     imgs: (N, H, W, C)
-    #     """
-    #     c = self.out_channels
-    #     p = self.x_embedder.patch_size[0] if patch_size is None else patch_size
-    #     if cls:
-    #         x = x[:,1:]
-    #     else:
-    #         x = x
-        
-    #     h = w = int(x.shape[1] ** 0.5)
-    #     assert h * w == x.shape[1]
-
-    #     x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
-    #     x = torch.einsum('nhwpqc->nchpwq', x)
-    #     imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
-    #     return imgs
     
     def forward(self, x, t, condition, return_logvar=False):
         """
@@ -472,11 +431,6 @@ class SiT(nn.Module):
         # timestep and class embedding
         t_embed = self.t_embedder(t)                   # (N, D)
         c = t_embed.repeat(ts,1)
-
-        afno_feat = x.detach().clone()
-        for afno_blk in self.afno_blocks:
-            afno_feat = afno_blk(afno_feat)
-        afno_feat = self.norm(afno_feat)
         
         for i, block in enumerate(self.spatial_blocks):
             x = block(x, c)                   # (N, T, D)
@@ -491,14 +445,7 @@ class SiT(nn.Module):
             x = block(x, c)                      # (N, T, D)
         x = rearrange(x, '(b n) t d -> b t n d',t=ts,b=b)
         
-        afno_feat = rearrange(afno_feat, '(b t) n d -> b t n d',t=ts,b=b)
-
-        v_WFNO = self.final_layer(afno_feat, c, if_time=False) 
         x = self.final_layer(x, c, if_time=False)    
-        
-        concatenated = torch.cat((v_WFNO, x), dim=1)            # (N, T, patch_size ** 2 * out_channels)
-        G = self.sigmoid(self.conv_fuse(concatenated))
-        x = G * x + (1 - G) * v_WFNO
         x = self.patch2img(x)
 
         return x, zs
