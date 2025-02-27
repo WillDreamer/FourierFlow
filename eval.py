@@ -198,7 +198,8 @@ def parse_args(input_args=None):
 
     # logging:
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps")
-    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.5_difftrans_afno_cycle_0220-00:55")
+    #* 替换为新的exp的name
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.01_difftrans_afno_cycle_0220-00:48")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs/test")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--sampling-steps", type=int, default=10000)
