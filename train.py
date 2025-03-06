@@ -34,13 +34,13 @@ def parse_args(input_args=None):
     #* 每次试验前标注实验名称，
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_cfd_no_align_difftrans_afno_cycle")
+                        default="3d_cfd_0.05_align_difftrans_afno_cycle")
     parser.add_argument("--flnm", type=str, \
                         default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \
                         default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
     # parser.add_argument("--exp-name", type=str, \
-    #                     default="3d_CFD_M1.0_no_align_difftrans_afno_cycle")
+    #                     default="3d_CFD_M1.0_0.01_align_difftrans_afno_cycle")
     # parser.add_argument("--flnm", type=str, \
     #                     default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     # parser.add_argument("--base-path", type=str, \
@@ -56,7 +56,7 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.)
+    parser.add_argument("--proj-coeff", type=float, default=0.005)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
 
     # model

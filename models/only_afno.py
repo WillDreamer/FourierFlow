@@ -18,6 +18,7 @@ from typing import Callable, List, Optional
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from afno2d import AFNO2D, Block
 from functools import partial
 from einops.layers.torch import Rearrange
 import pdb
@@ -215,6 +216,7 @@ class MultiHeadAttention(nn.Module):
         QK_T_1_norm = self.softmax(QK_T_1)
         QK_T_2_norm = self.softmax(QK_T_2)
 
+        #eq 1
         attention_scores = (QK_T_1_norm - _lambda * QK_T_2_norm)
 
         if mask:
@@ -284,7 +286,7 @@ class FinalLayer(nn.Module):
         #     nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         # )
 
-    def forward(self, x, c, if_time):
+    def forward(self, x):
         
         x = x
         x = self.linear(x)
@@ -299,7 +301,7 @@ class SiT(nn.Module):
     def __init__(
         self,
         path_type='edm',
-        input_size=32,
+        input_size=128,
         patch_size=8,
         in_channels=4,
         hidden_size=512,           ##
@@ -328,15 +330,9 @@ class SiT(nn.Module):
         self.z_dims = [768]
         self.encoder_depth = encoder_depth
 
-        # self.x_embedder = PatchEmbed(
-        #     input_size, patch_size, in_channels, hidden_size, bias=True
-        #     )
         self.grid_size = tuple([s // p for s, p in zip(to_2tuple(input_size), to_2tuple(patch_size))])
         self.num_patches = self.grid_size[0] * self.grid_size[1]
-        self.t_embedder = TimestepEmbedder(hidden_size) # timestep embedding type
-        # self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        # num_patches = self.x_embedder.num_patches
-        # Will use fixed sin-cos embedding:
+
         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, hidden_size), requires_grad=False)
         
         patch_dim = in_channels * patch_size ** 2
@@ -348,19 +344,29 @@ class SiT(nn.Module):
         
         self.pos_embedding = nn.Parameter(torch.randn(1, num_frames, self.num_patches, hidden_size))
         
-        self.spatial_blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(6)
-        ])
-        self.temporal_blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(3)
-        ])
-        
         self.projectors = nn.ModuleList([
             build_mlp(hidden_size, projector_dim, z_dim) for z_dim in self.z_dims
             ])
         self.final_layer = FinalLayer(decoder_hidden_size, patch_size, self.out_channels)
         self.cross_attn = CrossAttention(hidden_size)
-        
+
+        uniform_drop = True
+        drop_path_rate=0.
+        norm_layer = partial(nn.LayerNorm, eps=1e-6)
+        self.norm = norm_layer(hidden_size)
+        h = input_size // patch_size
+        w = h // 2 + 1
+        if uniform_drop:
+            print('using uniform droppath with expect rate', drop_path_rate)
+            dpr = [drop_path_rate for _ in range(afno_depth)]  # stochastic depth decay rule
+        else:
+            print('using linear droppath with expect rate', drop_path_rate * 0.5)
+            dpr = [x.item() for x in torch.linspace(0, drop_path_rate, afno_depth)]
+        self.afno_blocks = nn.ModuleList([
+            Block(
+                dim=hidden_size, mlp_ratio=mlp_ratio,
+                drop=0., drop_path=dpr[i], norm_layer=norm_layer, h=h, w=w, use_fno=False, use_blocks=False)
+            for i in range(afno_depth)])
        
         self.initialize_weights()
 
@@ -379,30 +385,7 @@ class SiT(nn.Module):
             )
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
-        # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        # w = self.x_embedder.proj.weight.data
-        # nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        # nn.init.constant_(self.x_embedder.proj.bias, 0)
 
-        # Initialize label embedding table:
-        # nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
-
-        # Initialize timestep embedding MLP:
-        nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
-        nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
-
-        # Zero-out adaLN modulation layers in SiT blocks:
-        for block in self.spatial_blocks:
-            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
-            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
-        
-        for block in self.temporal_blocks:
-            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
-            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
-
-        # Zero-out output layers:
-        # nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
-        # nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
     
@@ -428,24 +411,19 @@ class SiT(nn.Module):
 
         N, T, D = x.shape
         # timestep and class embedding
-        t_embed = self.t_embedder(t)                   # (N, D)
-        c = t_embed.repeat(ts,1)
+
+        afno_feat = x
+        for afno_blk in self.afno_blocks:
+            afno_feat = afno_blk(afno_feat)
+        afno_feat = self.norm(afno_feat)
+
+        proj = self.projectors[0](afno_feat.reshape(-1, D)).reshape(N, T, -1)
+        zs = [rearrange(proj, '(b t) n d -> b t n d', t=ts)] 
         
-        for i, block in enumerate(self.spatial_blocks):
-            x = block(x, c)                   # (N, T, D)
-            if (i + 1) == self.encoder_depth:
-                proj = self.projectors[0](x.reshape(-1, D)).reshape(N, T, -1)
-                la_D = proj.shape[-1]   
-                zs = [rearrange(proj, '(b t) n d -> b t n d', t=ts)] 
-        
-        x = rearrange(x, '(b t) n d -> (b n) t d',t=ts)
-        c = t_embed.repeat(n,1)
-        for i, block in enumerate(self.temporal_blocks):
-            x = block(x, c)                      # (N, T, D)
-        x = rearrange(x, '(b n) t d -> b t n d',t=ts,b=b)
-        
-        x = self.final_layer(x, c, if_time=False)    
-        x = self.patch2img(x)
+        afno_feat = rearrange(afno_feat, '(b t) n d -> b t n d',t=ts,b=b)
+
+        v_WFNO = self.final_layer(afno_feat,) 
+        x = self.patch2img(v_WFNO)
 
         return x, zs
 
@@ -554,33 +532,14 @@ SiT_models = {
 }
 
 if __name__ == "__main__":
-    # 创建一个测试用的Attention实例
-    attention = Attention(
-        dim=768,  # 输入维度
-        num_heads=8,  # 注意力头数
-        qkv_bias=True,  # 使用偏置
-        qk_norm=False,  # 不使用qk归一化
-    )
-    diff_atten = MultiHeadAttention(num_hidden=768, num_heads=8, d_k=1)
 
     # 创建一个随机输入张量
     batch_size = 4
     seq_len = 16
-    x = torch.randn(batch_size, seq_len, 768)
+    x = torch.randn(batch_size, 4,4,128, 128)
+    t=torch.rand(x.shape[0], 1, 1, 1, 1)
+    model = SiT()
+    print(model(x,t.flatten(),x)[0].shape)
 
-    # 前向传播
-    out = attention(x)
-    
-    print(f"输入形状: {x.shape}")
-    print(f"输出形状: {out.shape}")
-    print(f"注意力头数: {attention.num_heads}")
-    print(f"每个头的维度: {attention.head_dim}")
-
-    out = diff_atten(x,x,x)
-    
-    print(f"输入形状: {x.shape}")
-    print(f"输出形状: {out.shape}")
-    print(f"注意力头数: {attention.num_heads}")
-    print(f"每个头的维度: {attention.head_dim}")
 
 

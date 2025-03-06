@@ -14,6 +14,7 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from einops import rearrange
 from models.diff_afno_sit import SiT_models
+# from models.diff_sit_flash import SiT_models
 import math
 from torchvision.utils import make_grid
 import pdb
@@ -199,7 +200,7 @@ def parse_args(input_args=None):
     # logging:
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps")
     #* 替换为新的exp的name
-    parser.add_argument("--exp-name", type=str, default="3d_cfd_mse_align_0.01_difftrans_afno_cycle_0220-00:48")
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_0227-08:36")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs/test")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--sampling-steps", type=int, default=10000)

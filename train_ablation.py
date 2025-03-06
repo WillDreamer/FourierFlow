@@ -21,7 +21,7 @@ import random
 import os
 
 from align.MAE_ViViT import ViViT_Encoder, MAE_ViViT
-from models.diff_sit import SiT_models
+from models.only_afno import SiT_models
 # from models.sit import SiT_models
 from utils.loss import SILoss
 from utils.metrics import *
@@ -35,7 +35,7 @@ def parse_args(input_args=None):
     #* 每次试验前标注实验名称，
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_cfd_0.01_align_vanillatrans_no_afno_cycle")
+                        default="3d_cfd_0.01_align_only_afno_cycle")
     parser.add_argument("--flnm", type=str, \
                         default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \

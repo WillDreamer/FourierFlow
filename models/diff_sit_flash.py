@@ -8,6 +8,8 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 import numpy as np
 import math
 from torch import einsum
@@ -209,20 +211,25 @@ class MultiHeadAttention(nn.Module):
         key_1 = key[:, :, :, :self.num_hidden]
         key_2 = key[:, :, :, self.num_hidden:]
 
-        QK_T_1 = torch.matmul(query_1, key_1.mT) / torch.sqrt(self.d_k)
-        QK_T_2 = torch.matmul(query_2, key_2.mT) / torch.sqrt(self.d_k)
+        # QK_T_1 = torch.matmul(query_1, key_1.mT) / torch.sqrt(self.d_k)
+        # QK_T_2 = torch.matmul(query_2, key_2.mT) / torch.sqrt(self.d_k)
 
-        QK_T_1_norm = self.softmax(QK_T_1)
-        QK_T_2_norm = self.softmax(QK_T_2)
+        # QK_T_1_norm = self.softmax(QK_T_1)
+        # QK_T_2_norm = self.softmax(QK_T_2)
 
-        attention_scores = (QK_T_1_norm - _lambda * QK_T_2_norm)
+        #eq 1
+        # attention_scores = (QK_T_1_norm - _lambda * QK_T_2_norm)
 
-        if mask:
-            self.mask = self.mask.to(query.device)
-            attention_scores = attention_scores.masked_fill(self.mask == 1, float('-inf'))
+        # if mask:
+        #     self.mask = self.mask.to(query.device)
+        #     attention_scores = attention_scores.masked_fill(self.mask == 1, float('-inf'))
 
-        attention_scores = self.dropout(attention_scores) 
-        output = torch.matmul(attention_scores, values)  
+        # attention_scores = self.dropout(attention_scores) 
+        # output = torch.matmul(attention_scores, values)  
+        out1 = flash_attn_func(query_1.permute(0, 2, 1, 3), key_1.permute(0, 2, 1, 3), values.permute(0, 2, 1, 3))
+        out2 = flash_attn_func(query_2.permute(0, 2, 1, 3), key_2.permute(0, 2, 1, 3), values.permute(0, 2, 1, 3))
+        output = out1 -  _lambda * out2 
+        
         output = output.transpose(1, 2).contiguous().view(-1, self.num_heads , self.seq_len, self.num_hidden)  
         
         output = self.group_norm(output)
@@ -302,8 +309,8 @@ class SiT(nn.Module):
         input_size=32,
         patch_size=8,
         in_channels=4,
-        hidden_size=512,           ##
-        decoder_hidden_size=512,   ##
+        hidden_size=256,           ##
+        decoder_hidden_size=256,   ##
         num_heads=8,               ##
         afno_depth = 6,
         encoder_depth=4,

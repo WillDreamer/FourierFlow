@@ -38,21 +38,7 @@ Currently, we provide experiments for [ImageNet](https://www.kaggle.com/competit
 ### 3. Training
 
 <!-- ```bash
-accelerate launch train.py \
-  --report-to="wandb" \
-  --allow-tf32 \
-  --mixed-precision="fp16" \
-  --seed=0 \
-  --path-type="linear" \
-  --prediction="v" \
-  --weighting="uniform" \
-  --model="SiT-XL/2" \
-  --enc-type="dinov2-vit-b" \
-  --proj-coeff=0.5 \
-  --encoder-depth=8 \
-  --output-dir="exps" \
-  --exp-name="linear-dinov2-b-enc8" \
-  --data-dir=[YOUR_DATA_PATH]
+accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train_ablation.py
 ``` -->
 ```bash
 export NCCL_IB_DISABLE=0 export NCCL_P2P_DISABLE=1 export NCCL_DEBUG=INFO accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train.py
