@@ -33,18 +33,18 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
     #* 每次试验前标注实验名称，
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
-    parser.add_argument("--exp-name", type=str, \
-                        default="3d_cfd_0.05_align_difftrans_afno_cycle")
-    parser.add_argument("--flnm", type=str, \
-                        default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
-    parser.add_argument("--base-path", type=str, \
-                        default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
     # parser.add_argument("--exp-name", type=str, \
-    #                     default="3d_CFD_M1.0_0.01_align_difftrans_afno_cycle")
+    #                     default="3d_cfd_0.05_align_difftrans_afno_cycle")
     # parser.add_argument("--flnm", type=str, \
-    #                     default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    #                     default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     # parser.add_argument("--base-path", type=str, \
     #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    parser.add_argument("--exp-name", type=str, \
+                        default="3d_CFD_M1.0_0.001_align_difftrans_afno_cycle")
+    parser.add_argument("--flnm", type=str, \
+                        default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    parser.add_argument("--base-path", type=str, \
+                        default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
     
     parser.add_argument("--reduced-resolution", type=int, default=4)
     
@@ -56,7 +56,7 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.005)
+    parser.add_argument("--proj-coeff", type=float, default=0.001)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
 
     # model
@@ -134,6 +134,21 @@ def update_ema(ema_model, model, decay=0.9999):
         # TODO: Consider applying only to params that require_grad to avoid small numerical changes of pos_embed
         ema_params[name].mul_(decay).add_(param.data, alpha=1 - decay)
 
+
+def remove_module_prefix(state_dict):
+    """
+    仅在所有 key 都带有 'module.' 前缀的情况下，统一移除 'module.'。
+    否则原样返回。
+    """
+    keys = list(state_dict.keys())
+    if all(k.startswith("module.") for k in keys):
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            new_key = k[len("module."):]
+            new_state_dict[new_key] = v
+        return new_state_dict
+    else:
+        return state_dict  
 
 def create_logger(logging_dir):
     """
@@ -231,10 +246,13 @@ def main(args):
 
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     
-    pretrained_mae_path = '/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt'
+    # pretrained_mae_path = '/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt'
+    pretrained_mae_path = '/wanghaixin/MAE-ViViT/vivit-M1.0-1e-8-mask0.5-mae_1999.pt'
     ckpt = torch.load(pretrained_mae_path, map_location='cpu')
+    ckpt = remove_module_prefix(ckpt['model_state_dict'])
     vit_model = MAE_ViViT()
-    encoder_state_dict = {k.replace('encoder.', ''): v for k, v in ckpt['model_state_dict'].items() if 'encoder' in k}
+    encoder_state_dict = {k.replace('encoder.', ''): v for k, v in ckpt.items() if 'encoder' in k}
+    
     vit_model.encoder.load_state_dict(encoder_state_dict)
     vit_encoder = ViViT_Encoder(vit_model.encoder)
     vit_encoder.to(device)

@@ -160,14 +160,14 @@ def metric_func(pred, target, if_mean=True, Lx=1., Ly=1., Lz=1., iLow=4, iHigh=1
     RMSE, normalized RMSE, max error, RMSE at the boundaries, conserved variables, RMSE in Fourier space, temporal sensitivity
     """
     pred, target = pred.to(device), target.to(device)
-    # (batch, nx^i..., timesteps, nc)
     idxs = target.size()
     if len(idxs) == 4:
         pred = pred.permute(0, 3, 1, 2)
         target = target.permute(0, 3, 1, 2)
     if len(idxs) == 5:
-        pred = pred.permute(0, 4, 1, 2, 3)
-        target = target.permute(0, 4, 1, 2, 3)
+        # Input shape is B T C H W
+        pred = pred.permute(0, 2, 3, 4, 1)
+        target = target.permute(0, 2, 3, 4, 1)
     elif len(idxs) == 6:
         pred = pred.permute(0, 5, 1, 2, 3, 4)
         target = target.permute(0, 5, 1, 2, 3, 4)
