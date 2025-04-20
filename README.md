@@ -41,7 +41,7 @@ Currently, we provide experiments for [ImageNet](https://www.kaggle.com/competit
 accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train_ablation.py
 ``` -->
 ```bash
-export NCCL_IB_DISABLE=0 export NCCL_P2P_DISABLE=1 export NCCL_DEBUG=INFO accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=2 train.py
+accelerate launch /wanghaixin/FourierFlow/train.py --allow-tf32
 ```
 
 Then this script will automatically create the folder in `exps` to save logs and checkpoints. You can adjust the following options:
@@ -64,19 +64,21 @@ For DINOv2 models, it will be automatically downloaded from `torch.hub`. For CLI
 You can generate images (and the .npz file can be used for [ADM evaluation](https://github.com/openai/guided-diffusion/tree/main/evaluations) suite) through the following script:
 
 ```bash
-torchrun --nnodes=1 --nproc_per_node=8 generate.py \
-  --model SiT-XL/2 \
-  --num-fid-samples 50000 \
-  --ckpt YOUR_CHECKPOINT_PATH \
-  --path-type=linear \
-  --encoder-depth=8 \
-  --projector-embed-dims=768 \
-  --per-proc-batch-size=64 \
-  --mode=sde \
-  --num-steps=250 \
-  --cfg-scale=1.8 \
-  --guidance-high=0.7
+python eval.py
 ```
+
+If you want to test the surrogate model and the generative model together, run the following:
+
+```bash
+python all_eval.py
+```
+
+If you want to test the results of each step, run:
+
+```bash
+python all_eval_step.py
+```
+
 
 We also provide the SiT-XL/2 checkpoint (trained for 4M iterations) used in the final evaluation. It will be automatically downloaded if you do not specify `--ckpt`.
 

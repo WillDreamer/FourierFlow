@@ -309,7 +309,8 @@ class SiT(nn.Module):
         num_heads=8,               ##
         afno_depth = 6,
         encoder_depth=4,
-        depth=28,
+        spa_depth=6,
+        tem_depth=3,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
         num_classes=1000,
@@ -351,10 +352,10 @@ class SiT(nn.Module):
         self.pos_embedding = nn.Parameter(torch.randn(1, num_frames, self.num_patches, hidden_size))
         
         self.spatial_blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(6)
+            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(spa_depth)
         ])
         self.temporal_blocks = nn.ModuleList([
-            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(3)
+            SiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio, **block_kwargs) for _ in range(tem_depth)
         ])
         
         self.projectors = nn.ModuleList([
@@ -574,7 +575,7 @@ def SiT_XL_8(**kwargs):
     return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
 
 def SiT_L_2(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=2, num_heads=16, **kwargs)
+    return SiT(hidden_size=768, decoder_hidden_size=768, patch_size=8, num_heads=8, **kwargs)
 
 def SiT_L_4(**kwargs):
     return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=4, num_heads=16, **kwargs)

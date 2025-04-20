@@ -17,6 +17,7 @@ from einops import rearrange
 import math
 from torchvision.utils import make_grid
 import os
+from samplers import euler_sampler
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import sys
@@ -69,6 +70,194 @@ def requires_grad(model, flag=True):
 #################################################################################
 #                                  Testing Loop                                #
 #################################################################################
+
+def evaluate_surrogate_over_time(
+    model, test_dataloader, metric_func, args, device, logger, normalizer=None
+):
+
+    model.eval()  # Enable classifier-free guidance
+
+    _err_RMSE_list = []
+    _err_nRMSE_list = []
+    _err_max_list = []
+
+    with torch.no_grad():
+        for _, _, raw_video in test_dataloader:
+            raw_video = rearrange(raw_video, "B H W T C -> B T C H W").to(device)
+            
+            B, T_total, C, H, W = raw_video.shape
+            pred_len = 4
+            num_rollouts = (T_total - pred_len) // pred_len
+
+            model_input = raw_video[:, :pred_len]  
+            pred_all = []
+
+            for rollout_step in range(num_rollouts):
+                # 构造时间引导 t
+                B = model_input.shape[0]
+                if args.weighting == "uniform":
+                    time_input = torch.rand((B, 1, 1, 1, 1), device=device, dtype=raw_video.dtype)
+                elif args.weighting == "lognormal":
+                    rnd_normal = torch.randn((B, 1, 1, 1, 1), device=device, dtype=raw_video.dtype)
+                    sigma = rnd_normal.exp()
+                    if args.path_type == "linear":
+                        time_input = sigma / (1 + sigma)
+                    elif args.path_type == "cosine":
+                        time_input = 2 / np.pi * torch.atan(sigma)
+                    else:
+                        raise ValueError(f"Unsupported path_type: {args.path_type}")
+                else:
+                    raise ValueError(f"Unsupported weighting: {args.weighting}")
+
+                pred = model(x=model_input, t=time_input.flatten())  # [B, pred_len, C, H, W]
+                pred_all.append(pred)
+
+                model_input = torch.cat([model_input, pred], dim=1)[:, -pred_len:]
+
+            # 拼接所有预测步
+            pred_all = torch.cat(pred_all, dim=1)  # [B, T_total - input_len, C, H, W]
+            target_eval = raw_video[:, pred_len:]  # [B, T_total - input_len, C, H, W]
+            T = pred_all.shape[1]
+
+            for t in range(T):
+                output_t = pred_all[:, t].unsqueeze(1)  # [B, 1, C, H, W]
+                target_t = target_eval[:, t].unsqueeze(1)
+
+                _err_RMSE, _err_nRMSE, _err_CSV, _err_Max, _err_BD, _err_F = \
+                    metric_func(output_t, target_t, if_mean=True, Lx=1., Ly=1., Lz=1.)
+
+                if len(_err_RMSE_list) <= t:
+                    _err_RMSE_list.append(0.0)
+                    _err_nRMSE_list.append(0.0)
+                    _err_max_list.append(0.0)
+
+                _err_RMSE_list[t] += _err_RMSE.item()
+                _err_nRMSE_list[t] += _err_nRMSE.item()
+                _err_max_list[t] += _err_Max.item()
+
+    # Average over batches
+    num_batches = len(test_dataloader)
+    _err_RMSE_list = [v / num_batches for v in _err_RMSE_list]
+    _err_nRMSE_list = [v / num_batches for v in _err_nRMSE_list]
+    _err_max_list = [v / num_batches for v in _err_max_list]
+
+    # Logging results
+    for t in range(len(_err_RMSE_list)):
+        logger.info(
+            f'Surrogate Model Time Step {t}: '
+            f'RMSE={_err_RMSE_list[t]:.4f}, '
+            f'nRMSE={_err_nRMSE_list[t]:.4f}, '
+            f'Max={_err_max_list[t]:.4f}'
+        )
+
+    return _err_RMSE_list, _err_nRMSE_list, _err_max_list
+
+def evaluate_flow_model(
+    model_flow,
+    test_dataloader,
+    euler_sampler,
+    metric_func,
+    args,
+    device,
+    logger,
+    normalizer=None,  
+    cfg_scale=4.0,
+    num_steps=3,
+    guidance_low=0.0,
+    guidance_high=1.0,
+    heun=False,
+    zero_mask=False,
+    zero_prob=0.1,
+):
+
+    model_flow.eval()
+    _err_RMSE_list = []
+    _err_nRMSE_list = []
+    _err_max_list = []
+    
+    with torch.no_grad():
+        for _, _, raw_video in test_dataloader:
+            raw_video = rearrange(raw_video, "B H W T C -> B T C H W").to(device)
+            
+            
+            B, T_total, C, H, W = raw_video.shape
+            pred_len = 4
+            num_rollouts = (T_total - pred_len) // pred_len
+
+            model_input = raw_video[:, :pred_len]  
+            sample_input = torch.randn_like(model_input, device=device)
+            pred_all = []
+
+            for rollout_step in range(num_rollouts):
+                # 构造时间引导 t
+                B = model_input.shape[0]
+                if args.weighting == "uniform":
+                    time_input = torch.rand((B, 1, 1, 1, 1), device=device, dtype=raw_video.dtype)
+                elif args.weighting == "lognormal":
+                    rnd_normal = torch.randn((B, 1, 1, 1, 1), device=device, dtype=raw_video.dtype)
+                    sigma = rnd_normal.exp()
+                    if args.path_type == "linear":
+                        time_input = sigma / (1 + sigma)
+                    elif args.path_type == "cosine":
+                        time_input = 2 / np.pi * torch.atan(sigma)
+                    else:
+                        raise ValueError(f"Unsupported path_type: {args.path_type}")
+                else:
+                    raise ValueError(f"Unsupported weighting: {args.weighting}")
+
+                pred = euler_sampler(
+                    model_flow,
+                    sample_input,
+                    model_input,
+                    num_steps=num_steps,
+                    cfg_scale=cfg_scale,
+                    guidance_low=guidance_low,
+                    guidance_high=guidance_high,
+                    path_type=args.path_type,
+                    heun=heun,
+                ).to(torch.float32)  # [B, T, C, H, W]
+                pred_all.append(pred)
+
+                model_input = torch.cat([model_input, pred], dim=1)[:, -pred_len:]
+
+            pred_all = torch.cat(pred_all, dim=1)  # [B, T_total - input_len, C, H, W]
+            target_eval = raw_video[:, pred_len:]  # [B, T_total - input_len, C, H, W]
+            T = pred_all.shape[1]
+
+            for t in range(T):
+                output_t = pred_all[:, t].unsqueeze(1)  # [B, 1, C, H, W]
+                target_t = target_eval[:, t].unsqueeze(1)
+
+                _err_RMSE, _err_nRMSE, _err_CSV, _err_Max, _err_BD, _err_F = \
+                    metric_func(output_t, target_t, if_mean=True, Lx=1., Ly=1., Lz=1.)
+
+                if len(_err_RMSE_list) <= t:
+                    _err_RMSE_list.append(0.0)
+                    _err_nRMSE_list.append(0.0)
+                    _err_max_list.append(0.0)
+
+                _err_RMSE_list[t] += _err_RMSE.item()
+                _err_nRMSE_list[t] += _err_nRMSE.item()
+                _err_max_list[t] += _err_Max.item()
+
+    # Average over batches
+    num_batches = len(test_dataloader)
+    _err_RMSE_list = [v / num_batches for v in _err_RMSE_list]
+    _err_nRMSE_list = [v / num_batches for v in _err_nRMSE_list]
+    _err_max_list = [v / num_batches for v in _err_max_list]
+
+    # Logging results
+    for t in range(len(_err_RMSE_list)):
+        logger.info(
+            f'Fourier Flow Time Step {t}: '
+            f'RMSE={_err_RMSE_list[t]:.4f}, '
+            f'nRMSE={_err_nRMSE_list[t]:.4f}, '
+            f'Max={_err_max_list[t]:.4f}'
+        )
+
+    return _err_RMSE_list, _err_nRMSE_list, _err_max_list
+
+            
 
 def main(args):    
     os.makedirs(args.logging_dir, exist_ok=True)
@@ -162,7 +351,8 @@ def main(args):
                                     reduced_batch=reduced_batch,
                                     initial_step=0,
                                     saved_folder=base_path,
-                                    if_eval_plot=True
+                                    if_eval_plot=True,
+                                    if_rollout=True
                                 )
     local_batch_size = 8
     test_dataloader = DataLoader(
@@ -173,112 +363,36 @@ def main(args):
         pin_memory=True,
         drop_last=True
     )
-
-    nl=0.1
     
-    model.eval()  # important! This enables embedding dropout for classifier-free guidance
-               
-    _err_RMSE_avg = 0
-    _err_nRMSE_avg = 0
-    _err_max_avg = 0
-    with torch.no_grad():
-        # test_iter = iter(test_dataloader)
-        # target_test, grid_test, raw_image_test = next(test_iter)
-        for target_test, grid_test, raw_video in test_dataloader:
-            raw_video = rearrange(raw_video, "B H W T C -> B T C H W").to(device)
-            target_test = rearrange(target_test, "B H W T C -> B T C H W").to(device)
-            model_kwargs = dict()
-            # loss = loss_fn(model, target, raw_video, model_kwargs)
-            if args.weighting == "uniform":
-                time_input = torch.rand((raw_video.shape[0], 1, 1, 1, 1))
-            elif args.weighting == "lognormal":
-                # sample timestep according to log-normal distribution of sigmas following EDM
-                rnd_normal = torch.randn((raw_video.shape[0], 1 ,1, 1, 1))
-                sigma = rnd_normal.exp()
-                if args.path_type == "linear":
-                    time_input = sigma / (1 + sigma)
-                elif args.path_type == "cosine":
-                    time_input = 2 / np.pi * torch.atan(sigma)                
-            time_input = time_input.to(device=raw_video.device, dtype=raw_video.dtype)
+    rmse_list, nrmse_list, max_list = evaluate_surrogate_over_time(
+            model=model,
+            test_dataloader=test_dataloader,
+            metric_func=metric_func,
+            args=args,
+            device=device,
+            logger=logger,
+            normalizer=normalizer,  # optional
+        )
 
-            # #=================Add noise====================
-            # noise = torch.randn_like(raw_video)
-            # noise_level = nl
-            # raw_video = raw_video + noise_level * noise
-            # #=================Add noise====================
+    rmse_list, nrmse_list, max_list = evaluate_flow_model(
+        model_flow=model_flow,
+        test_dataloader=test_dataloader,
+        euler_sampler=euler_sampler,
+        metric_func=metric_func,
+        args=args,
+        device=device,
+        logger=logger,
+        normalizer=normalizer,  # optional
+        cfg_scale=4.0,
+        num_steps=3,
+        guidance_low=0.0,
+        guidance_high=1.0,
+        heun=False,
+        zero_mask=True,
+        zero_prob=0.1,
+    )
 
-            #=================Zero mask====================
-            decoded_image = normalizer.decode(raw_video.cpu().detach().permute(0,3,4,1,2))
-            zero_prob = 0.1
-            mask = torch.rand(decoded_image.shape) < zero_prob
-            decoded_image[mask] = 0
-            raw_video = normalizer.encode(decoded_image).to(target_test.device).permute(0,3,4,1,2)
-            #=================Zero mask====================
 
-            model_output_test = model(x = raw_video, t=time_input.flatten(), **model_kwargs)
-            Lx, Ly, Lz = 1., 1., 1.
-            
-            _err_RMSE, _err_nRMSE, _err_CSV, _err_Max, _err_BD, _err_F \
-            = metric_func(model_output_test, target_test, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
-
-            _err_RMSE_avg += _err_RMSE.item()
-            _err_nRMSE_avg += _err_nRMSE.item()
-            _err_max_avg += _err_Max.item()
-        _err_RMSE_avg /= len(test_dataloader)
-        _err_nRMSE_avg /= len(test_dataloader)
-        _err_max_avg /= len(test_dataloader)
-        
-        logger.info(f'PDE Surrogate RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, Max:{_err_max_avg:.4f}')
-    
-    model_flow.eval()
-    from FourierFlow.samplers import euler_sampler
-    _err_RMSE_avg = 0
-    _err_nRMSE_avg = 0
-    _err_max_avg = 0
-    with torch.no_grad():
-        # test_iter = iter(test_dataloader)
-        # target_test, grid_test, raw_image_test = next(test_iter)
-        for target_test, grid_test, raw_image_test in test_dataloader:
-            raw_image_test = rearrange(raw_image_test, "B H W T C -> B T C H W").to(device)
-            target_test = rearrange(target_test, "B H W T C -> B T C H W").to(device)
-            sample_input = torch.randn_like(target_test, device=device)
-            
-            # #=================Add noise====================
-            # noise = torch.randn_like(raw_image_test)
-            # noise_level = nl
-            # raw_image_test = raw_image_test + noise_level * noise
-            # #=================Add noise====================
-
-            #=================Zero mask====================
-            decoded_image = normalizer.decode(raw_image_test.cpu().detach().permute(0,3,4,1,2))
-            zero_prob = 0.1
-            mask = torch.rand(decoded_image.shape) < zero_prob
-            decoded_image[mask] = 0
-            raw_image_test = normalizer.encode(decoded_image).to(target_test.device).permute(0,3,4,1,2)
-            #=================Zero mask====================
-
-            samples = euler_sampler(
-                model_flow, 
-                sample_input, 
-                raw_image_test,
-                num_steps=3, 
-                cfg_scale=4.0,
-                guidance_low=0.,
-                guidance_high=1.,
-                path_type=args.path_type,
-                heun=False,
-            ).to(torch.float32)
-            Lx, Ly, Lz = 1., 1., 1.
-            _err_RMSE, _err_nRMSE, _err_CSV, _err_Max, _err_BD, _err_F \
-            = metric_func(samples, target_test, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
-            _err_RMSE_avg += _err_RMSE.item()
-            _err_nRMSE_avg += _err_nRMSE.item()
-            _err_max_avg += _err_Max.item()
-        _err_RMSE_avg /= len(test_dataloader)
-        _err_nRMSE_avg /= len(test_dataloader)
-        _err_max_avg /= len(test_dataloader)
-        
-        logger.info(f'FourierFlow RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, Max:{_err_max_avg:.4f}')
     # with PdfPages(os.path.join('/wanghaixin/FourierFlow/output',args.exp_name+'.pdf')) as pdf:
     #     print(samples.shape)
     #     samples = rearrange(samples, "B T C H W -> B H W T C")

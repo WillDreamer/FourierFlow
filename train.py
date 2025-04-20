@@ -32,35 +32,41 @@ logger = get_logger(__name__)
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
     #* 每次试验前标注实验名称，
-    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
-    # parser.add_argument("--exp-name", type=str, \
-    #                     default="3d_cfd_0.05_align_difftrans_afno_cycle")
-    # parser.add_argument("--flnm", type=str, \
-    #                     default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
-    # parser.add_argument("--base-path", type=str, \
-    #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_CFD_M1.0_0.001_align_difftrans_afno_cycle")
+                        default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2")
     parser.add_argument("--flnm", type=str, \
-                        default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+                        default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \
                         default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    parser.add_argument("--pretrained-mae-path", type=str, \
+                        default="/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt")
     
+    # parser.add_argument("--exp-name", type=str, \
+    #                     default="3d_CFD_M1.0_0.005_align_difftrans_afno_cycle")
+    # parser.add_argument("--flnm", type=str, \
+    #                     default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    # parser.add_argument("--base-path", type=str, \
+    #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+    # parser.add_argument("--pretrained-mae-path", type=str, \
+                        # default="/wanghaixin/MAE-ViViT/vivit-M1.0-1e-8-mask0.5-mae_1999.pt")
+    
+    parser.add_argument("--model", type=str,default="SiT-XL/2")  # B -> "SiT-L/2"
+    parser.add_argument("--batch-size", type=int, default=100)    # 100 for FourierFlow-S
     parser.add_argument("--reduced-resolution", type=int, default=4)
-    
+
+    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
-    parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--epochs", type=int, default=30001) # +1 for saving ckpts
     # (BS//len(loader)) iters for one epoch
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.001)
-    parser.add_argument("--learning-rate", type=float, default=5e-4)
+    parser.add_argument("--proj-coeff", type=float, default=0.001)   # 0.001 for FourierFlow-S
+    parser.add_argument("--learning-rate", type=float, default=5e-4) # 5e-4 for FourierFlow-S,1e-4 for FourierFlow-B
 
     # model
-    parser.add_argument("--model", type=str,default="SiT-XL/2")
+    
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--encoder-depth", type=int, default=4)
     parser.add_argument("--fused-attn", action=argparse.BooleanOptionalAction, default=True)
@@ -246,9 +252,7 @@ def main(args):
 
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     
-    # pretrained_mae_path = '/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt'
-    pretrained_mae_path = '/wanghaixin/MAE-ViViT/vivit-M1.0-1e-8-mask0.5-mae_1999.pt'
-    ckpt = torch.load(pretrained_mae_path, map_location='cpu')
+    ckpt = torch.load(args.pretrained_mae_path, map_location='cpu')
     ckpt = remove_module_prefix(ckpt['model_state_dict'])
     vit_model = MAE_ViViT()
     encoder_state_dict = {k.replace('encoder.', ''): v for k, v in ckpt.items() if 'encoder' in k}
