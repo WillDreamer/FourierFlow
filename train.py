@@ -33,7 +33,7 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
     #* 每次试验前标注实验名称，
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2")
+                        default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2-resume")
     parser.add_argument("--flnm", type=str, \
                         default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \
@@ -53,6 +53,8 @@ def parse_args(input_args=None):
     parser.add_argument("--model", type=str,default="SiT-XL/2")  # B -> "SiT-L/2"
     parser.add_argument("--batch-size", type=int, default=100)    # 100 for FourierFlow-S
     parser.add_argument("--reduced-resolution", type=int, default=4)
+    parser.add_argument("--proj-coeff", type=float, default=0.001)   # 0.001 for FourierFlow-S
+    parser.add_argument("--learning-rate", type=float, default=5e-4) # 5e-4 for FourierFlow-S,1e-4 for FourierFlow-B
 
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
@@ -62,8 +64,8 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--proj-coeff", type=float, default=0.001)   # 0.001 for FourierFlow-S
-    parser.add_argument("--learning-rate", type=float, default=5e-4) # 5e-4 for FourierFlow-S,1e-4 for FourierFlow-B
+    parser.add_argument("--resume-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2_0417-17:58")
+    
 
     # model
     
@@ -340,12 +342,12 @@ def main(args):
     if args.resume_step > 0:
         ckpt_name = str(args.resume_step).zfill(7) +'.pt'
         ckpt = torch.load(
-            f'{os.path.join(args.output_dir, args.exp_name)}/checkpoints/{ckpt_name}',
+            f'{os.path.join(args.output_dir, args.resume_name)}/checkpoints/{ckpt_name}',
             map_location='cpu',
             )
-        model.load_state_dict(ckpt['model'])
-        ema.load_state_dict(ckpt['ema'])
-        optimizer.load_state_dict(ckpt['opt'])
+        model.load_state_dict(remove_module_prefix(ckpt['model']))
+        ema.load_state_dict(remove_module_prefix(ckpt['ema']))
+        optimizer.load_state_dict(remove_module_prefix(ckpt['opt']))
         global_step = ckpt['steps']
 
     model, optimizer, train_dataloader, scheduler = accelerator.prepare(
