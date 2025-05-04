@@ -210,6 +210,25 @@ class MultiHeadAttention(nn.Module):
         key_1 = key[:, :, :, :self.num_hidden]
         key_2 = key[:, :, :, self.num_hidden:]
 
+        # window_size = 3
+        # K_2d = key_2.view(-1, int(math.sqrt(self.seq_len)),int(math.sqrt(self.seq_len)),self.num_hidden)
+        # pad = window_size // 2
+        # K_mean_2d = torch.nn.functional.avg_pool2d(K_2d, kernel_size=window_size, stride=1, padding=pad)  # [B*H, dim, H, W]
+        # K_mean = K_mean_2d.permute(0, 2, 3, 1).contiguous().view(-1, self.num_heads, self.seq_len, self.num_hidden)
+        # key_2 = key_2 - K_mean
+
+        B, Head, _, C = key_2.shape
+        side = int(math.sqrt(self.seq_len))  # assume T is square
+        key_2_reshaped = key_2.view(B*Head, side, side, C).permute(0, 3, 1, 2)  # [B*H, C, H, W]
+
+        # unfold: [B*H, C, H*W, K*K]
+        unfolded = torch.nn.functional.unfold(key_2_reshaped, kernel_size=3, padding=1)  # [B*H, C*K*K, H*W]
+        unfolded = unfolded.view(B*Head, C, 9, side*side)
+
+        K_mean = unfolded.mean(dim=2)  # [B*H, C, H*W]
+        K_mean = K_mean.view(B, Head, self.seq_len, C)
+        key_2 = key_2 - K_mean
+
         QK_T_1 = torch.matmul(query_1, key_1.mT) / torch.sqrt(self.d_k)
         QK_T_2 = torch.matmul(query_2, key_2.mT) / torch.sqrt(self.d_k)
 
@@ -232,7 +251,7 @@ class MultiHeadAttention(nn.Module):
         output = torch.cat([output[:, i, :, :] for i in range(self.num_heads)], dim=-1)
 
         output = self.W_o(output)  
-        return output 
+        return output, attention_scores 
 
 #################################################################################
 #                                 Core SiT Model                                #
@@ -267,8 +286,8 @@ class SiTBlock(nn.Module):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(c).chunk(6, dim=-1)
         )
-        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))[0]
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))[0]
 
         return x
 
@@ -632,7 +651,7 @@ if __name__ == "__main__":
     print(f"注意力头数: {attention.num_heads}")
     print(f"每个头的维度: {attention.head_dim}")
 
-    out = diff_atten(x,x,x)
+    out = diff_atten(x)[0]
     
     print(f"输入形状: {x.shape}")
     print(f"输出形状: {out.shape}")

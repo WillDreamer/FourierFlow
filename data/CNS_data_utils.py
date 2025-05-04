@@ -521,6 +521,7 @@ class FNODatasetMultistep(Dataset):
                               num_samples_max=-1,
                               if_eval_plot = False,
                               if_rollout = False,
+                              if_noise=False
                               ):
         """一次性创建训练集和测试集"""
         # 只读取一次数据
@@ -532,7 +533,7 @@ class FNODatasetMultistep(Dataset):
                                  reduced_batch=reduced_batch,
                                  if_rollout = if_rollout
                                  )
-        
+
         # 计算分割点
         total_samples = len(dataset.data)
         if num_samples_max > 0:
@@ -550,6 +551,10 @@ class FNODatasetMultistep(Dataset):
         
         test_dataset.data = dataset.data[indices[:test_size]]
         test_dataset.data = torch.tensor(normalizer.encode(test_dataset.data))
+
+        if if_noise:
+            train_dataset.data += 0.1*torch.randn_like(train_dataset.data)
+            test_dataset.data += 0.1*torch.randn_like(test_dataset.data)
         
         if if_eval_plot:
             return train_dataset, test_dataset, normalizer

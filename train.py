@@ -21,10 +21,9 @@ import random
 import os
 
 from align.MAE_ViViT import ViViT_Encoder, MAE_ViViT
-from models.diff_afno_sit import SiT_models
+from models.ldiff_afno_sit import SiT_models
 from utils.loss import SILoss
 from utils.metrics import *
-
 
 
 logger = get_logger(__name__)
@@ -33,7 +32,7 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
     #* 每次试验前标注实验名称，
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2-resume")
+                        default="3d_cfd_0.001_align_localdifftrans_afno_cycle_SiT-XL")
     parser.add_argument("--flnm", type=str, \
                         default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--base-path", type=str, \
@@ -64,7 +63,7 @@ def parse_args(input_args=None):
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--resume-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2_0417-17:58")
+    parser.add_argument("--resume-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2-resume_0421-20:50")
     
 
     # model
@@ -76,6 +75,7 @@ def parse_args(input_args=None):
 
     # dataset
     parser.add_argument("--data-dir", type=str, default="../data/imagenet256")
+    parser.add_argument("--if-noise", type=bool, default=False, help="add noise to train data")
     parser.add_argument("--resolution", type=int, choices=[128,256], default=128)
 
     # precision
@@ -310,8 +310,8 @@ def main(args):
                                     reduced_resolution_t=1,
                                     reduced_batch=1,
                                     initial_step=0,
-                                    saved_folder=args.base_path,)
-    
+                                    saved_folder=args.base_path,
+                                    if_noise=args.if_noise)
     local_batch_size = int(args.batch_size // accelerator.num_processes)
     train_dataloader = DataLoader(
         train_dataset,

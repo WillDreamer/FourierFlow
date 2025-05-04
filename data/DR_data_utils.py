@@ -444,6 +444,7 @@ class FNODatasetMultistep(Dataset):
                  if_test=False,
                  test_ratio=0.1,
                  num_samples_max = -1,
+                 if_noise=False
                  ):
 
         root_path = os.path.join(os.path.abspath(saved_folder), filename)
@@ -512,6 +513,8 @@ class FNODatasetMultistep(Dataset):
                 self.tsteps_t = tsteps_t
 
         self.initial_step = initial_step
+        if if_noise:
+            self.data += 0.1 * torch.randn_like(self.data)
 
     def __len__(self):
         return len(self.data)
