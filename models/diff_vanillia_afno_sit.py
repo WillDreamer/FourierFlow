@@ -18,7 +18,7 @@ from typing import Callable, List, Optional
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from afno2d import AFNO2D, Block
+from afno2d_vanilla import AFNO2D, Block
 from functools import partial
 from einops.layers.torch import Rearrange
 import pdb
@@ -210,13 +210,6 @@ class MultiHeadAttention(nn.Module):
         key_1 = key[:, :, :, :self.num_hidden]
         key_2 = key[:, :, :, self.num_hidden:]
 
-        window_size = 3
-        K_2d = key_2.view(-1, int(math.sqrt(self.seq_len)),int(math.sqrt(self.seq_len)),self.num_hidden)
-        pad = window_size // 2
-        K_mean_2d = torch.nn.functional.avg_pool2d(K_2d, kernel_size=window_size, stride=1, padding=pad)  # [B*H, dim, H, W]
-        K_mean = K_mean_2d.permute(0, 2, 3, 1).contiguous().view(-1, self.num_heads, self.seq_len, self.num_hidden)
-        key_2 = key_2 - K_mean
-        
         QK_T_1 = torch.matmul(query_1, key_1.mT) / torch.sqrt(self.d_k)
         QK_T_2 = torch.matmul(query_2, key_2.mT) / torch.sqrt(self.d_k)
 
@@ -239,7 +232,7 @@ class MultiHeadAttention(nn.Module):
         output = torch.cat([output[:, i, :, :] for i in range(self.num_heads)], dim=-1)
 
         output = self.W_o(output)  
-        return output, attention_scores 
+        return output 
 
 #################################################################################
 #                                 Core SiT Model                                #
@@ -274,8 +267,8 @@ class SiTBlock(nn.Module):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(c).chunk(6, dim=-1)
         )
-        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))[0]
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))[0]
+        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
 
         return x
 
@@ -639,7 +632,7 @@ if __name__ == "__main__":
     print(f"注意力头数: {attention.num_heads}")
     print(f"每个头的维度: {attention.head_dim}")
 
-    out = diff_atten(x)[0]
+    out = diff_atten(x,x,x)
     
     print(f"输入形状: {x.shape}")
     print(f"输出形状: {out.shape}")

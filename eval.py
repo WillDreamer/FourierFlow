@@ -14,10 +14,9 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from einops import rearrange
 from models.diff_afno_sit import SiT_models
-# from models.only_afno import SiT_models
+# from models.diff_sit import SiT_models
 import math
 from torchvision.utils import make_grid
-import pdb
 import os
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
@@ -71,12 +70,12 @@ def parse_args(input_args=None):
     # logging:
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps")
     #* 替换为新的exp的name
-    parser.add_argument("--exp-name", type=str, default="/wanghaixin/FourierFlow/exps/3d_cfd_M1.0_0.001_align_difftrans_afno_cycle_0426-22:43")
-    parser.add_argument("--flnm", type=str, default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-small_0428-03:07")
+    parser.add_argument("--flnm", type=str, default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs/test")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--sampling-steps", type=int, default=10000)
-    parser.add_argument("--ckpt-step", type=int, default=270000)
+    parser.add_argument("--ckpt-step", type=int, default=135000)
 
     # model
     parser.add_argument("--model", type=str,default="SiT-XL/2")

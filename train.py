@@ -19,9 +19,12 @@ import math
 from torchvision.utils import make_grid
 import random
 import os
-
 from align.MAE_ViViT import ViViT_Encoder, MAE_ViViT
-from models.ldiff_afno_sit import SiT_models
+# from models.ldiff_afno_sit import SiT_models
+from models.diff_afno_sit import SiT_models
+# from models.diff_stsit_afno import SiT_models
+# from models.diff_stsit import SiT_models
+# from models.diff_vanillia_afno_sit import SiT_models
 from utils.loss import SILoss
 from utils.metrics import *
 
@@ -31,34 +34,32 @@ logger = get_logger(__name__)
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
     #* 每次试验前标注实验名称，
+    # parser.add_argument("--exp-name", type=str, \
+    #                     default="3d_cfd_0.001_align_difftrans_afno_cycle_latte_60k_epo")
+    # parser.add_argument("--flnm", type=str, \
+    #                     default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    # parser.add_argument("--pretrained-mae-path", type=str, \
+                        # default="/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt")
+    
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_cfd_0.001_align_localdifftrans_afno_cycle_SiT-XL")
+                        default="3d_CFD_M1.0_0.0001_align_difftrans_afno_cycle")
     parser.add_argument("--flnm", type=str, \
-                        default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+                        default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
+    parser.add_argument("--pretrained-mae-path", type=str, \
+                        default="/wanghaixin/MAE-ViViT/ckpt_M1/vivit-M1.0-1e-8-mask0.5-mae_1999.pt")
+    
     parser.add_argument("--base-path", type=str, \
                         default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
-    parser.add_argument("--pretrained-mae-path", type=str, \
-                        default="/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt")
-    
-    # parser.add_argument("--exp-name", type=str, \
-    #                     default="3d_CFD_M1.0_0.005_align_difftrans_afno_cycle")
-    # parser.add_argument("--flnm", type=str, \
-    #                     default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
-    # parser.add_argument("--base-path", type=str, \
-    #                     default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
-    # parser.add_argument("--pretrained-mae-path", type=str, \
-                        # default="/wanghaixin/MAE-ViViT/vivit-M1.0-1e-8-mask0.5-mae_1999.pt")
-    
     parser.add_argument("--model", type=str,default="SiT-XL/2")  # B -> "SiT-L/2"
-    parser.add_argument("--batch-size", type=int, default=100)    # 100 for FourierFlow-S
+    parser.add_argument("--batch-size", type=int, default=180)    # 100 for FourierFlow-S
     parser.add_argument("--reduced-resolution", type=int, default=4)
-    parser.add_argument("--proj-coeff", type=float, default=0.001)   # 0.001 for FourierFlow-S
+    parser.add_argument("--proj-coeff", type=float, default=0.0001)   # 0.001 for FourierFlow-S
     parser.add_argument("--learning-rate", type=float, default=5e-4) # 5e-4 for FourierFlow-S,1e-4 for FourierFlow-B
 
     parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
     parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
-    parser.add_argument("--epochs", type=int, default=30001) # +1 for saving ckpts
+    parser.add_argument("--epochs", type=int, default=60001) # +1 for saving ckpts
     # (BS//len(loader)) iters for one epoch
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
