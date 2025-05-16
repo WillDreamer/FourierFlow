@@ -10,6 +10,8 @@ conda activate repa
 pip install -r requirements.txt
 ```
 
+All our experiments are implemented on 4 x NVIDIA H800 GPUs.
+
 ### 2. Dataset
 
 #### Dataset download
