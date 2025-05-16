@@ -20,7 +20,7 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import sys
-sys.path.append('/wanghaixin/')
+sys.path.append('/your_path')
 from FourierFlowSurrogate.models.diff_afno_sit import SiT_models
 from models.diff_afno_sit import SiT_models as SiT_flow_models
 
