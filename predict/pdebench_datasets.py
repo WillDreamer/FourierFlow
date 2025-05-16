@@ -9,14 +9,11 @@ import video_transforms
 
 
 def extract_parameters(filename):
-    # 定义正则表达式模式来匹配 M, Eta 和 Zeta
-    pattern = r'M([\d.]+)_Eta([\d.eE-]+)_Zeta([\d.eE-]+)'
 
-    # 使用正则表达式搜索匹配的内容
+    pattern = r'M([\d.]+)_Eta([\d.eE-]+)_Zeta([\d.eE-]+)'
     match = re.search(pattern, filename)
     
     if match:
-        # 提取匹配的组
         M = float(match.group(1))
         Eta = float(match.group(2))
         Zeta = float(match.group(3))
@@ -32,7 +29,7 @@ class PDEBench_npy(torch.utils.data.Dataset):
     def __init__(
         self,
         args=None, 
-        data_path='/storage/panjiashu/2DCFD',
+        data_path='/path',
         filename=['2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Aug4000.npy'],
         num_frames=16, # number of frames to be generated + conditioned frames (set in train.py)
         image_size=32,
@@ -59,7 +56,7 @@ class PDEBench_npy(torch.utils.data.Dataset):
             self.temporal_sample = video_transforms.TemporalRandomCrop(num_frames * frame_interval)
             if self.use_spatial_sample:
                 self.spatial_sample = video_transforms.SpatialRandomCrop(16)
-        # 重新使用内存映射读取数据
+
         print("Reading data from memory-mapped file...")
         
         memmapped_array = np.memmap(os.path.join(data_path, filename[0]), dtype='float32', mode='r', shape=(4000, 21, 512, 512, 4))
@@ -72,13 +69,13 @@ class PDEBench_npy(torch.utils.data.Dataset):
             self.grid = torch.stack((X, Y), dim=-1)[::self.reduced_resolution, ::self.reduced_resolution]
 
         if self.normalize:
-            batch_stat = 1000 # 计算统计量时样本的下采样率
-            reduced_resolution_stat = 16 # 计算统计量时空间的下采样率
+            batch_stat = 1000 
+            reduced_resolution_stat = 16 
             stat_data = memmapped_array[:batch_stat, ::reduced_resolution_stat, ::reduced_resolution_stat]
-            stat_dim = tuple(range(4)) # 除了最后的channel维，其他维度都是统计维度
+            stat_dim = tuple(range(4)) 
             # self.means = stat_data.mean(stat_dim)
             # self.stds = stat_data.std(stat_dim)
-            self.means = torch.from_numpy(np.load('dataset_means.npy')).float()[0] # 存下来时多了一维
+            self.means = torch.from_numpy(np.load('dataset_means.npy')).float()[0] 
             self.stds = torch.from_numpy(np.load('dataset_stds.npy')).float()[0]
             print(f"Mean: {self.means}, Std: {self.stds}")
         
@@ -179,23 +176,22 @@ class PDEBench(torch.utils.data.Dataset):
                     with h5py.File(root_path, 'r') as f:
                         keys = list(f.keys())
                         keys.sort()
-                        _data = np.array(f['density'], dtype=np.float32) # 为了能够计算出一致的统计量来归一化，必须读取全部数据
-                        idx_cfd = _data.shape # 单个物理量的形状(N, T, H, W)
+                        _data = np.array(f['density'], dtype=np.float32)
+                        idx_cfd = _data.shape 
                         assert idx_cfd[-1] % image_size == 0, f"image_size {image_size} should be a divisor of {idx_cfd[-1]}"
-                        self.reduced_resolution = idx_cfd[-1] // image_size # 本来的代码里需要指定reduced_resolution，这里换成根据image_size来计算
+                        self.reduced_resolution = idx_cfd[-1] // image_size 
                         
                         data = np.zeros([idx_cfd[0],
                                         idx_cfd[2],
                                         idx_cfd[3],
                                         mt.ceil(idx_cfd[1]/reduced_resolution_t),
                                         4],
-                                        dtype=np.float32) # 最后物理量的形状(N, H, W, T, C)
+                                        dtype=np.float32) 
                         
-                        # 循环读取数据
                         field_names = ['Vx', 'Vy', 'density', 'pressure']
                         for i, field in enumerate(field_names):
                             _data = np.array(f[field], dtype=np.float32)
-                            _data = _data[:,::reduced_resolution_t,::1,::1] # 我不打算下采样时间，所以没有对原代码进行改动
+                            _data = _data[:,::reduced_resolution_t,::1,::1] 
                             # from (N, T, H, W) to (N, H, W, T)
                             _data = np.transpose(_data, (0, 2, 3, 1))
                             data[...,i] = _data
@@ -209,15 +205,15 @@ class PDEBench(torch.utils.data.Dataset):
                             self.grid = torch.stack((X, Y), dim=-1)[::reduced_resolution, ::reduced_resolution] # (H, W, 2)
                         
                         if normalize:
-                            reduced_batch_stat = 1 # 计算统计量时样本的下采样率
-                            reduced_resolution_stat = 8 # 计算统计量时空间的下采样率
+                            reduced_batch_stat = 1 
+                            reduced_resolution_stat = 8 
                             stat_data = data[::reduced_batch_stat, ::reduced_resolution_stat, ::reduced_resolution_stat]
-                            stat_dim = tuple(range(len(idx_cfd)-1)) # 除了最后的channel维，其他维度都是统计维度
+                            stat_dim = tuple(range(len(idx_cfd)-1)) 
                             means = stat_data.mean(stat_dim, keepdims=True)
                             stds = stat_data.std(stat_dim, keepdims=True)
                             # means = np.array([-2.3081107e-03, -2.6687531e-04, 4.5385528e+00, 2.4850531e+01], dtype=np.float32)
                             # stds = np.array([1.3211658, 1.3148949, 2.869468, 23.5342], dtype=np.float32)
-                            data = (data - means) / (stds) # 为了让数据归一化到[-1, 1]之间，除以1倍的标准差
+                            data = (data - means) / (stds)
                         data_all.append(data)
                         data_size_all.append(data.shape[0])
                         equation_name_all.append(file_idx)
@@ -251,7 +247,6 @@ class PDEBench(torch.utils.data.Dataset):
 
         video = torch.from_numpy(sample[start_pixel_xind::self.reduced_resolution, start_pixel_yind::self.reduced_resolution, frame_indice, :self.num_channels])
         grid = self.grid if self.use_coordinates else None
-        # 与grid拼接
         # if self.use_coordinates:
         #     video = torch.cat((video, self.grid.unsqueeze(2).repeat(1, 1, self.num_frames, 1)), dim=-1)
 
