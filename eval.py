@@ -14,7 +14,6 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from einops import rearrange
 from models.diff_afno_sit import SiT_models
-# from models.diff_sit import SiT_models
 import math
 from torchvision.utils import make_grid
 import os
@@ -68,11 +67,11 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
 
     # logging:
-    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps")
+    parser.add_argument("--output-dir", type=str, default="/your_path")
     #* 替换为新的exp的name
-    parser.add_argument("--exp-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-small_0428-03:07")
+    parser.add_argument("--exp-name", type=str, default="3d_cfd_0.01_align_difftrans_afno_cycle_0428-03:07")
     parser.add_argument("--flnm", type=str, default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
-    parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs/test")
+    parser.add_argument("--logging-dir", type=str, default="/your_path")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--sampling-steps", type=int, default=10000)
     parser.add_argument("--ckpt-step", type=int, default=135000)
@@ -163,19 +162,10 @@ def main(args):
     
     # flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
     flnm = args.flnm
-    base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
+    base_path='/your_path'
     reduce_resolution = 4
     reduced_batch = 1
 
-    # base_path = '/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
-    # flnm = '2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
-    
-    # base_path = '/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
-    # flnm = '2D_CFD_Rand_M1.0_Eta0.01_Zeta0.01_periodic_128_Train.hdf5'
-    # reduce_resolution = 1
-    # reduced_batch = 10
-
-    #* 换成PDE数据集，先快速实验用reduced_batch 100
     train_dataset, test_dataset,normalizer = FNODatasetMultistep.get_train_test_datasets(
                                     flnm,
                                     reduced_resolution=reduce_resolution,
@@ -232,7 +222,7 @@ def main(args):
         _err_max_avg /= len(test_dataloader)
         
         logger.info(f'RMSE: {_err_RMSE_avg:.4f}, nRMSE: {_err_nRMSE_avg:.4f}, Max:{_err_max_avg:.4f}')
-    # with PdfPages(os.path.join('/wanghaixin/FourierFlow/output',args.exp_name+'.pdf')) as pdf:
+    # with PdfPages(os.path.join('/your_path',args.exp_name+'.pdf')) as pdf:
     #     print(samples.shape)
     #     samples = rearrange(samples, "B T C H W -> B H W T C")
     #     target_test = rearrange(target_test, "B T C H W -> B H W T C")
@@ -240,7 +230,7 @@ def main(args):
     #     target_test = normalizer.decode(target_test.cpu())
     #     for i in range(samples.size(0)):  
     #         fig, axes = plt.subplots(8, 4, figsize=(16, 9))  
-    #         axes = axes.flatten()  # 将 axes 数组扁平化为一维数组
+    #         axes = axes.flatten()  # 将 axes 
     #         for j in range(samples.size(-1)):
     #             T = samples.size(-2)
     #             for k in range(T):  
