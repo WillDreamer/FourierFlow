@@ -21,7 +21,7 @@ from samplers import euler_sampler
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import sys
-sys.path.append('/wanghaixin/')
+sys.path.append('/your_path')
 from FourierFlowSurrogate.models.diff_afno_sit import SiT_models
 from models.diff_afno_sit import SiT_models as SiT_flow_models
 
@@ -93,7 +93,7 @@ def evaluate_surrogate_over_time(
             pred_all = []
 
             for rollout_step in range(num_rollouts):
-                # 构造时间引导 t
+                
                 B = model_input.shape[0]
                 if args.weighting == "uniform":
                     time_input = torch.rand((B, 1, 1, 1, 1), device=device, dtype=raw_video.dtype)
@@ -114,7 +114,6 @@ def evaluate_surrogate_over_time(
 
                 model_input = torch.cat([model_input, pred], dim=1)[:, -pred_len:]
 
-            # 拼接所有预测步
             pred_all = torch.cat(pred_all, dim=1)  # [B, T_total - input_len, C, H, W]
             target_eval = raw_video[:, pred_len:]  # [B, T_total - input_len, C, H, W]
             T = pred_all.shape[1]
@@ -189,7 +188,7 @@ def evaluate_flow_model(
             pred_all = []
 
             for rollout_step in range(num_rollouts):
-                # 构造时间引导 t
+                
                 B = model_input.shape[0]
                 if args.weighting == "uniform":
                     time_input = torch.rand((B, 1, 1, 1, 1), device=device, dtype=raw_video.dtype)
@@ -309,7 +308,7 @@ def main(args):
         **block_kwargs
     )
     ckpt_step_flow = 270000
-    output_dir_flow = '/wanghaixin/FourierFlow/exps'
+    output_dir_flow = '/your_path'
     exp_name_flow = "3d_cfd_mse_align_0.01_difftrans_afno_cycle_0220-00:48"
     ckpt_name_flow = str(ckpt_step_flow).zfill(7) +'.pt'
     ckpt_flow = torch.load(
@@ -330,20 +329,10 @@ def main(args):
         torch.backends.cudnn.allow_tf32 = True
     
     flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
-    base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
+    base_path='/your_path'
     reduce_resolution = 4
     reduced_batch = 1
 
-    # base_path = '/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
-    # flnm = '2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
-    
-    # base_path = '/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
-    # # flnm = '2D_CFD_Rand_M0.1_Eta0.1_Zeta0.1_periodic_128_Train.hdf5'
-    # flnm='2D_CFD_Rand_M1.0_Eta0.1_Zeta0.1_periodic_128_Train.hdf5'
-    # reduce_resolution = 1
-    # reduced_batch = 1
-
-    #* 换成PDE数据集，先快速实验用reduced_batch 100
     train_dataset, test_dataset,normalizer = FNODatasetMultistep.get_train_test_datasets(
                                     flnm,
                                     reduced_resolution=reduce_resolution,
@@ -393,7 +382,7 @@ def main(args):
     )
 
 
-    # with PdfPages(os.path.join('/wanghaixin/FourierFlow/output',args.exp_name+'.pdf')) as pdf:
+    # with PdfPages(os.path.join('/your_path',args.exp_name+'.pdf')) as pdf:
     #     print(samples.shape)
     #     samples = rearrange(samples, "B T C H W -> B H W T C")
     #     target_test = rearrange(target_test, "B T C H W -> B H W T C")
@@ -421,10 +410,10 @@ def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
 
     # logging:
-    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlowSurrogate/exps")
+    parser.add_argument("--output-dir", type=str, default="/your_path")
     #* 替换为新的exp的name
     parser.add_argument("--exp-name", type=str, default="3d_cfd_surrogate_predict_0319-11-s06")
-    parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlowSurrogate/logs/test")
+    parser.add_argument("--logging-dir", type=str, default="/your_path")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--sampling-steps", type=int, default=10000)
     parser.add_argument("--ckpt-step", type=int, default=36000)
