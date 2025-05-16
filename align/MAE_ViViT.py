@@ -271,7 +271,6 @@ class MAE_Encoder(torch.nn.Module):
         # spatial masking
         patches, forward_indexes, backward_indexes = self.shuffle(patches)
         
-        #这里的n只保留0.25 
         x = rearrange(patches, 'n (b t) d -> (b t) n d',t=t)
         x = self.layer_norm(self.space_transformer(x))
         patches = rearrange(x, '(b t) n d -> t (b n) d',t=t)
@@ -279,7 +278,6 @@ class MAE_Encoder(torch.nn.Module):
         # temporal masking
         patches, forward_indexes_t, backward_indexes_t = self.shuffle(patches)
 
-        #这里的t只保留0.25 
         x = rearrange(patches, 't (b n) d -> (b n) t d',t=int(t*(1- self.mask_ratio)),b=b)
         x = self.layer_norm(self.temporal_transformer(x))
         x = rearrange(x, '(b n) t d -> b t n d',t=int(t*(1- self.mask_ratio)),b=b)
