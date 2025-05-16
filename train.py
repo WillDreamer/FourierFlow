@@ -20,11 +20,7 @@ from torchvision.utils import make_grid
 import random
 import os
 from align.MAE_ViViT import ViViT_Encoder, MAE_ViViT
-# from models.ldiff_afno_sit import SiT_models
 from models.diff_afno_sit import SiT_models
-# from models.diff_stsit_afno import SiT_models
-# from models.diff_stsit import SiT_models
-# from models.diff_vanillia_afno_sit import SiT_models
 from utils.loss import SILoss
 from utils.metrics import *
 
