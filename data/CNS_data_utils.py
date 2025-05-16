@@ -393,7 +393,7 @@ class FNODatasetSingle(Dataset):
     
     def __getitem__(self, idx):
         # return self.data[idx,...,:self.initial_step,:], self.data[idx], self.grid
-        # 先从图像入手,依次是目标图像，网格，condition
+        
         rand_idx = random.randint(0, int(self.data.shape[-2])-2)
         return self.data[idx,...,rand_idx+1,:], self.grid, self.data[idx,...,rand_idx,:]
 
@@ -407,8 +407,7 @@ class FNODatasetSingle(Dataset):
                               test_ratio=0.1,
                               num_samples_max=-1,
                               logger=''):
-        """一次性创建训练集和测试集"""
-        # 只读取一次数据
+        
         dataset = FNODatasetSingle(filename,
                                  initial_step=initial_step,
                                  saved_folder=saved_folder,
@@ -417,7 +416,6 @@ class FNODatasetSingle(Dataset):
                                  reduced_batch=reduced_batch,
                                  logger=logger)
         
-        # 计算分割点
         total_samples = len(dataset.data)
         if num_samples_max > 0:
             total_samples = min(num_samples_max, total_samples)
@@ -425,7 +423,6 @@ class FNODatasetSingle(Dataset):
         indices = torch.randperm(total_samples)
         test_size = int(total_samples * test_ratio)
         
-        # 创建训练集和测试集
         train_dataset = copy.deepcopy(dataset)
         test_dataset = copy.deepcopy(dataset)
 
@@ -502,7 +499,6 @@ class FNODatasetMultistep(Dataset):
     
     def __getitem__(self, idx):
         # return self.data[idx,...,:self.initial_step,:], self.data[idx], self.grid
-        # 先从图像入手,依次是目标图像，网格，condition
         if self.if_rollout:
             return self.data[idx], self.grid, self.data[idx]
         else:
@@ -523,8 +519,7 @@ class FNODatasetMultistep(Dataset):
                               if_rollout = False,
                               if_noise=False
                               ):
-        """一次性创建训练集和测试集"""
-        # 只读取一次数据
+        
         dataset = FNODatasetMultistep(filename,
                                  initial_step=initial_step,
                                  saved_folder=saved_folder,
@@ -534,7 +529,6 @@ class FNODatasetMultistep(Dataset):
                                  if_rollout = if_rollout
                                  )
 
-        # 计算分割点
         total_samples = len(dataset.data)
         if num_samples_max > 0:
             total_samples = min(num_samples_max, total_samples)
