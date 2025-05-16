@@ -33,38 +33,30 @@ logger = get_logger(__name__)
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Training")
-    #* 每次试验前标注实验名称，
-    # parser.add_argument("--exp-name", type=str, \
-    #                     default="3d_cfd_0.001_align_difftrans_afno_cycle_latte_60k_epo")
-    # parser.add_argument("--flnm", type=str, \
-    #                     default="2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
-    # parser.add_argument("--pretrained-mae-path", type=str, \
-                        # default="/wanghaixin/MAE-ViViT/ckpt/vivit-t-mae_1999.pt")
     
     parser.add_argument("--exp-name", type=str, \
-                        default="3d_CFD_M1.0_0.0001_align_difftrans_afno_cycle")
+                        default="3d_CFD_M0.1_0.01_align_difftrans_afno_cycle")
     parser.add_argument("--flnm", type=str, \
                         default="2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5")
     parser.add_argument("--pretrained-mae-path", type=str, \
-                        default="/wanghaixin/MAE-ViViT/ckpt_M1/vivit-M1.0-1e-8-mask0.5-mae_1999.pt")
-    
+                        default="/your_path/vivit-M1.0-1e-8-mask0.5-mae_1999.pt")
     parser.add_argument("--base-path", type=str, \
-                        default="/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/")
+                        default="/your_path/CFD/2D_Train_Rand/")
     parser.add_argument("--model", type=str,default="SiT-XL/2")  # B -> "SiT-L/2"
     parser.add_argument("--batch-size", type=int, default=180)    # 100 for FourierFlow-S
     parser.add_argument("--reduced-resolution", type=int, default=4)
     parser.add_argument("--proj-coeff", type=float, default=0.0001)   # 0.001 for FourierFlow-S
     parser.add_argument("--learning-rate", type=float, default=5e-4) # 5e-4 for FourierFlow-S,1e-4 for FourierFlow-B
 
-    parser.add_argument("--output-dir", type=str, default="/wanghaixin/FourierFlow/exps/")
-    parser.add_argument("--logging-dir", type=str, default="/wanghaixin/FourierFlow/logs")
+    parser.add_argument("--output-dir", type=str, default="/your_path/FourierFlow/exps/")
+    parser.add_argument("--logging-dir", type=str, default="/your_path/FourierFlow/logs")
     parser.add_argument("--report-to", type=str, default="tensorboard")
     parser.add_argument("--epochs", type=int, default=60001) # +1 for saving ckpts
     # (BS//len(loader)) iters for one epoch
     parser.add_argument("--sampling-steps", type=int, default=45000)
     parser.add_argument("--checkpointing-steps", type=int, default=45000)
     parser.add_argument("--resume-step", type=int, default=0)
-    parser.add_argument("--resume-name", type=str, default="3d_cfd_0.001_align_difftrans_afno_cycle_SiT-L-2-resume_0421-20:50")
+    parser.add_argument("--resume-name", type=str, default="/your_path")
     
 
     # model
@@ -237,7 +229,7 @@ def main(args):
     #     encoders, encoder_types, architectures = load_encoders(args.enc_type, device)
     # else:
     #     encoders, encoder_types, architectures = [None], [None], [None]
-    #* FNO的embed dim应该是20
+
     z_dims = [128]
     # z_dims = [encoder.embed_dim for encoder in encoders] if args.enc_type != 'None' else [0]
     block_kwargs = {"fused_attn": args.fused_attn, "qk_norm": args.qk_norm}
@@ -265,7 +257,6 @@ def main(args):
     vit_encoder.to(device)
     requires_grad(ema, False)
     
-    #* 暂时来看SILoss没有用到encoder
     loss_fn = SILoss(
         prediction=args.prediction,
         path_type=args.path_type, 
@@ -290,21 +281,16 @@ def main(args):
         weight_decay=args.adam_weight_decay,
         eps=args.adam_epsilon,
     )    
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.epochs, gamma=0.1)  # 根据需要调整参数
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.epochs, gamma=0.1)
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=args.epochs//3, T_mult=2, eta_min=1e-8)
     scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=args.learning_rate//5, max_lr=args.learning_rate,
                                               mode = 'triangular2', gamma = 0.95,
                                               step_size_up=10000, step_size_down=20000,cycle_momentum=False)  
     
-    # flnm = '2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_512_Train.hdf5'
-    # base_path='/wanghaixin/PDEBench/data/2D/CFD/2D_Train_Rand/'
 
-    #* 换成PDE数据集，先快速实验用reduced_batch 100
     if 'CFD' in args.flnm:
         from data.CNS_data_utils import FNODatasetMultistep
-    elif 'react' in args.flnm:
-        from data.DR_data_utils import FNODatasetMultistep
     train_dataset, test_dataset = FNODatasetMultistep.get_train_test_datasets(
                                     args.flnm,
                                     reduced_resolution=args.reduced_resolution,
@@ -381,7 +367,7 @@ def main(args):
 
     for epoch in range(args.epochs):
         model.train()
-        #* raw_image, x应该是VAE encoder输出, y是类别标签
+
         for target, grid, raw_video in train_dataloader:
             raw_video = rearrange(raw_video, "B H W T C -> B T C H W").to(device)
             target = rearrange(target, "B H W T C -> B T C H W").to(device)
@@ -390,9 +376,9 @@ def main(args):
             with torch.no_grad():
                 zs = []
                 with accelerator.autocast():
-                    #* 需要选好用哪里的特征做output
+
                     z = vit_encoder(target)
-                    #* z.shape [bs,4, 256, 768]
+                   
                     zs.append(z)
 
             with accelerator.accumulate(model):
