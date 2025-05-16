@@ -8,7 +8,6 @@ import math
 import warnings
 
 
-# code from SiT repository
 pretrained_models = {'last.pt'}
 
 def download_model(model_name):
