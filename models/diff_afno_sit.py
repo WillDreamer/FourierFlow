@@ -103,7 +103,6 @@ class LabelEmbedder(nn.Module):
 
 class CrossAttention(nn.Module):
     """
-    CrossAttention module used in the Perceiver IO model.
 
     Args:
         query_dim (int): The dimension of the query input.
@@ -202,6 +201,13 @@ class MultiHeadAttention(nn.Module):
         key_1 = key[:, :, :, :self.num_hidden]
         key_2 = key[:, :, :, self.num_hidden:]
 
+        window_size = 3
+        K_2d = key_2.view(-1, int(math.sqrt(self.seq_len)),int(math.sqrt(self.seq_len)),self.num_hidden)
+        pad = window_size // 2
+        K_mean_2d = torch.nn.functional.avg_pool2d(K_2d, kernel_size=window_size, stride=1, padding=pad)  # [B*H, dim, H, W]
+        K_mean = K_mean_2d.permute(0, 2, 3, 1).contiguous().view(-1, self.num_heads, self.seq_len, self.num_hidden)
+        key_2 = key_2 - K_mean
+        
         QK_T_1 = torch.matmul(query_1, key_1.mT) / torch.sqrt(self.d_k)
         QK_T_2 = torch.matmul(query_2, key_2.mT) / torch.sqrt(self.d_k)
 
@@ -224,10 +230,10 @@ class MultiHeadAttention(nn.Module):
         output = torch.cat([output[:, i, :, :] for i in range(self.num_heads)], dim=-1)
 
         output = self.W_o(output)  
-        return output 
+        return output, attention_scores 
 
 #################################################################################
-#                                 Core SiT Model                                #
+#                                 Core Model                                #
 #################################################################################
 
 class SiTBlock(nn.Module):
@@ -259,8 +265,8 @@ class SiTBlock(nn.Module):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
             self.adaLN_modulation(c).chunk(6, dim=-1)
         )
-        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+        x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))[0]
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))[0]
 
         return x
 
@@ -421,26 +427,6 @@ class SiT(nn.Module):
         # nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
-
-    # def unpatchify(self, x, patch_size=None,cls=True):
-    #     """
-    #     x: (N, T, patch_size**2 * C)
-    #     imgs: (N, H, W, C)
-    #     """
-    #     c = self.out_channels
-    #     p = self.x_embedder.patch_size[0] if patch_size is None else patch_size
-    #     if cls:
-    #         x = x[:,1:]
-    #     else:
-    #         x = x
-        
-    #     h = w = int(x.shape[1] ** 0.5)
-    #     assert h * w == x.shape[1]
-
-    #     x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
-    #     x = torch.einsum('nhwpqc->nchpwq', x)
-    #     imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
-    #     return imgs
     
     def forward(self, x, t, condition, return_logvar=False):
         """
@@ -501,7 +487,6 @@ class SiT(nn.Module):
 #################################################################################
 #                   Sine/Cosine Positional Embedding Functions                  #
 #################################################################################
-# https://github.com/facebookresearch/mae/blob/main/util/pos_embed.py
 
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False, extra_tokens=0):
     """
@@ -604,17 +589,16 @@ SiT_models = {
 if __name__ == "__main__":
     
     attention = Attention(
-        dim=768,  # 输入维度
-        num_heads=8,  # 注意力头数
-        qkv_bias=True,  # 使用偏置
-        qk_norm=False,  # 不使用qk归一化
+        dim=768, 
+        num_heads=8, 
+        qkv_bias=True,  
+        qk_norm=False,  
     )
     diff_atten = MultiHeadAttention(num_hidden=768, num_heads=8, d_k=1)
-
-    
     batch_size = 4
     seq_len = 16
     x = torch.randn(batch_size, seq_len, 768)
-
     out = attention(x)
+    
+
 
