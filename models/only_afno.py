@@ -525,7 +525,6 @@ SiT_models = {
 
 if __name__ == "__main__":
 
-    # 创建一个随机输入张量
     batch_size = 4
     seq_len = 16
     x = torch.randn(batch_size, 4,4,128, 128)
