@@ -1,11 +1,3 @@
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-# --------------------------------------------------------
-# References:
-# GLIDE: https://github.com/openai/glide-text2im
-# MAE: https://github.com/facebookresearch/mae/blob/main/models_mae.py
-# --------------------------------------------------------
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -554,33 +546,18 @@ SiT_models = {
 }
 
 if __name__ == "__main__":
-    # 创建一个测试用的Attention实例
+    
     attention = Attention(
-        dim=768,  # 输入维度
-        num_heads=8,  # 注意力头数
-        qkv_bias=True,  # 使用偏置
-        qk_norm=False,  # 不使用qk归一化
+        dim=768, 
+        num_heads=8,  
+        qkv_bias=True, 
+        qk_norm=False,  
     )
     diff_atten = MultiHeadAttention(num_hidden=768, num_heads=8, d_k=1)
 
-    # 创建一个随机输入张量
+    
     batch_size = 4
     seq_len = 16
     x = torch.randn(batch_size, seq_len, 768)
-
-    # 前向传播
     out = attention(x)
-    
-    print(f"输入形状: {x.shape}")
-    print(f"输出形状: {out.shape}")
-    print(f"注意力头数: {attention.num_heads}")
-    print(f"每个头的维度: {attention.head_dim}")
-
-    out = diff_atten(x,x,x)
-    
-    print(f"输入形状: {x.shape}")
-    print(f"输出形状: {out.shape}")
-    print(f"注意力头数: {attention.num_heads}")
-    print(f"每个头的维度: {attention.head_dim}")
-
 
