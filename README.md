@@ -16,6 +16,10 @@ All our experiments are implemented on 8 x NVIDIA H800 GPUs.
 
 #### Dataset download
 
+Please download Compressible N-S datasets in PDEBench and Shear Flow in The Well datasets, and set 'base-path' in `train.py` accordingly.
+[PDEBench](https://github.com/pdebench/PDEBench)
+[The Well](https://github.com/PolymathicAI/the_well)
+
 
 ### 3. Training
 
