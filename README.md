@@ -29,7 +29,6 @@ accelerate launch /you_path_to/FourierFlow/train.py --allow-tf32
 Then this script will automatically create the folder in `exps` to save logs and checkpoints. You can adjust the following options:
 
 - `--models`: `[SiT-B/2, SiT-L/2, SiT-XL/2]`
-- `--enc-type`: `[dinov2-vit-b, dinov2-vit-l, dinov2-vit-g, dinov1-vit-b, mocov3-vit-b, , mocov3-vit-l, clip-vit-L, jepa-vit-h, mae-vit-l]`
 - `--proj-coeff`: Any values larger than 0
 - `--encoder-depth`: Any values between 1 to the depth of the model
 - `--output-dir`: Any directory that you want to save checkpoints and logs
