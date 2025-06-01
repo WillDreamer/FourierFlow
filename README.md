@@ -60,12 +60,6 @@ python all_eval_step.py
 We also provide the SiT-XL/2 checkpoint (trained for 4M iterations) used in the final evaluation. It will be automatically downloaded if you do not specify `--ckpt`.
 
 
-### Analysis
-
-1. analysis the power of diffTrans
-```bash
-python diff_analysis.py
-```
 
 
 ## Acknowledgement
